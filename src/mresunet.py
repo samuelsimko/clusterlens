@@ -211,7 +211,11 @@ class MResUNet(nn.Module):
         self.encoding = nn.ModuleList(
             [
                 EncodingBox(
-                    in_channels=1, out_channels=64, kernel_size=3, rescale=False, device=device
+                    in_channels=1,
+                    out_channels=64,
+                    kernel_size=3,
+                    rescale=False,
+                    device=device,
                 ),
                 EncodingBox(
                     in_channels=64, out_channels=128, kernel_size=3, device=device
