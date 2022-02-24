@@ -20,10 +20,11 @@ class EncodingBoxSubStage(nn.Module):
         stride=1,
         padding=1,
         activation=nn.SELU(),
+        device="cpu",
     ):
         super(EncodingBoxSubStage, self).__init__()
 
-        self.activation_function = activation
+        self.activation_function = activation.to(device)
         self.conv = nn.Conv2d(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -31,8 +32,8 @@ class EncodingBoxSubStage(nn.Module):
             dilation=dilation,
             stride=stride,
             padding=padding,
-        )
-        self.batch_norm = nn.BatchNorm2d(num_features=out_channels)
+        ).to(device)
+        self.batch_norm = nn.BatchNorm2d(num_features=out_channels).to(device)
 
     def forward(self, x):
         y = self.conv(x)
@@ -64,6 +65,7 @@ class DecodingBoxSubStage(EncodingBoxSubStage):
         activation=nn.SELU(),
         dropout=0.3,
         concatenate=False,
+        device="cpu",
     ):
         super().__init__(
             in_channels * (2 if concatenate else 1),
@@ -73,9 +75,10 @@ class DecodingBoxSubStage(EncodingBoxSubStage):
             stride,
             padding,
             activation,
+            device,
         )
         self.concatenate = concatenate
-        self.dropout = nn.Dropout(p=dropout)
+        self.dropout = nn.Dropout(p=dropout).to(device)
 
     def forward(self, x, concat_with=None):
         x = self.dropout(x)
@@ -109,6 +112,7 @@ class EncodingBox(nn.Module):
         kernel_size=3,
         activation=nn.SELU(),
         rescale=True,
+        device="cpu",
     ):
         super(EncodingBox, self).__init__()
 
@@ -122,6 +126,7 @@ class EncodingBox(nn.Module):
                     stride=(2 if (dilation == 1 and rescale) else 1),
                     padding=dilation,
                     activation=activation,
+                    device=device,
                 )
                 for dilation in range(1, 5)
             ]
@@ -154,6 +159,7 @@ class DecodingBox(nn.Module):
         activation=nn.SELU(),
         final_activation=nn.SELU(),
         dropout=0.2,
+        device="cpu",
     ):
         super(DecodingBox, self).__init__()
 
@@ -175,6 +181,7 @@ class DecodingBox(nn.Module):
                     activation=(activation if (dilation != 1) else final_activation),
                     dropout=dropout,
                     concatenate={1: False, 2: True, 3: False, 4: True}[dilation],
+                    device=device,
                 )
                 for dilation in reversed(range(1, 5))
             ]
@@ -197,20 +204,26 @@ class MResUNet(nn.Module):
     The modified Residual U-Net as specified in https://arxiv.org/pdf/2003.06135.pdf
     """
 
-    def __init__(self, map_size=40):
+    def __init__(self, map_size=40, device="cpu"):
         super(MResUNet, self).__init__()
 
         # Four encoding boxes
         self.encoding = nn.ModuleList(
             [
                 EncodingBox(
-                    in_channels=1, out_channels=64, kernel_size=3, rescale=False
+                    in_channels=1, out_channels=64, kernel_size=3, rescale=False, device=device
                 ),
-                EncodingBox(in_channels=64, out_channels=128, kernel_size=3),
-                EncodingBox(in_channels=128, out_channels=256, kernel_size=3),
-                EncodingBox(in_channels=256, out_channels=512, kernel_size=3),
+                EncodingBox(
+                    in_channels=64, out_channels=128, kernel_size=3, device=device
+                ),
+                EncodingBox(
+                    in_channels=128, out_channels=256, kernel_size=3, device=device
+                ),
+                EncodingBox(
+                    in_channels=256, out_channels=512, kernel_size=3, device=device
+                ),
             ]
-        )
+        ).to(device)
 
         # Four decoding boxes
         self.decoding = nn.ModuleList(
@@ -221,6 +234,7 @@ class MResUNet(nn.Module):
                     final_channels=128,
                     kernel_size=3,
                     dropout=0.2,
+                    device=device,
                 ),
                 DecodingBox(
                     in_channels=128,
@@ -228,6 +242,7 @@ class MResUNet(nn.Module):
                     final_channels=64,
                     kernel_size=3,
                     dropout=0.2,
+                    device=device,
                 ),
                 DecodingBox(
                     in_channels=64,
@@ -236,14 +251,15 @@ class MResUNet(nn.Module):
                     kernel_size=3,
                     dropout=0.2,
                     final_activation=nn.Linear(map_size, map_size),
+                    device=device,
                 ),
             ]
-        )
+        ).to(device)
 
         # A convolution to divide the number of channels by 2 before the decoding stage
         self.reduce_channel = nn.Conv2d(
             in_channels=512, out_channels=256, kernel_size=3, padding=1
-        )
+        ).to(device)
 
     def forward(self, x):
 

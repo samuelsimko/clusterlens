@@ -63,7 +63,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using {device} device")
 
 # Define network
-net = MResUNet(npix).to(device).double()
+net = MResUNet(npix, device).to(device).double()
 
 # Define optimizer
 optimizer = torch.optim.SGD(net.parameters(), lr=learning_rate)
