@@ -1,5 +1,5 @@
 black
 camb
--e git+https://github.com/carronj/LensIt.git@afb141ebb4ff05f38ef78c8387bd6720516c4e58#egg=lensit
+-e git+https://github.com/carronj/LensIt.git@bd2032778d75d6ed52b87418ae4cc54c5e6a5d24#egg=lensit
 torch
 torchvision
