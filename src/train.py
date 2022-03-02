@@ -3,9 +3,11 @@ import os
 from datetime import datetime
 
 import torch
+import torchvision
 
 from torch import nn
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 from models.mresunet import MResUNet
 from models.resnet import ResNet
@@ -17,6 +19,7 @@ os.environ["LENSIT"] = TRAINING_LENSIT_DIR
 from lensingmapdataset import LensingMapDataset
 from lensingmapdataset import initialize_camb
 
+writer = SummaryWriter()
 
 # Initialize camb
 os.environ["CAMBINIDIR"] = CAMB_INI_DIR
@@ -26,7 +29,7 @@ results = initialize_camb(cambinifile)
 # Training parameters
 learning_rate = 1e-3
 batch_size = 16
-epochs = 1
+epochs = 3
 loss_fn = nn.MSELoss()
 
 data_params = small_data_params
@@ -62,6 +65,13 @@ print(f"Using {device} device")
 model = MResUNet(data_params["npix"], device).to(device).float()
 model_name = "MResUNet"
 
+images, labels = next(iter(train_dataloader))
+
+grid = torchvision.utils.make_grid(images)
+writer.add_image("images", grid[0, :, :], 0, dataformats="HW")
+writer.add_graph(model, images[:, None, :].float())
+writer.close()
+
 # Define optimizer
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -69,6 +79,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 def train_loop(dataloader, model, loss_fn, optimizer):
     """Training loop"""
     size = len(dataloader.dataset)
+    running_loss = 0.0
     for batch, (X, y) in enumerate(dataloader):
         # Compute prediction and loss
         X = X[:, None, :].float()
@@ -81,9 +92,15 @@ def train_loop(dataloader, model, loss_fn, optimizer):
         loss.backward()
         optimizer.step()
 
+        running_loss += loss.item()
+
         if batch % 100 == 0:
             loss, current = loss.item(), batch * len(X)
             print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
+
+    avg_loss = running_loss / len(training_data)
+    print("Training loss average: ", avg_loss)
+    return avg_loss
 
 
 def validation_loop(dataloader, model, loss_fn):
@@ -97,16 +114,19 @@ def validation_loop(dataloader, model, loss_fn):
         running_vloss += vloss.item()
 
     avg_vloss = running_vloss / len(validation_data)
-    print("validation loss average: ", avg_vloss)
+    print("Validation loss average: ", avg_vloss)
+    return avg_vloss
 
 
 # Train for multiple epochs
 for t in range(epochs):
     print(f"Epoch {t+1}\n-------------------------------")
     model.train(True)
-    train_loop(train_dataloader, model, loss_fn, optimizer)
+    avg_loss = train_loop(train_dataloader, model, loss_fn, optimizer)
+    writer.add_scalar("loss/train", avg_loss, t)
     model.train(False)
-    validation_loop(validation_dataloader, model, loss_fn)
+    avg_vloss = validation_loop(validation_dataloader, model, loss_fn)
+    writer.add_scalar("loss/validation", avg_vloss, t)
 
 # Save model
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
