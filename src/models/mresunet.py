@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
+import pytorch_lightning as pl
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-from torch import nn
 
 
 class EncodingBoxSubStage(nn.Module):
@@ -20,11 +22,10 @@ class EncodingBoxSubStage(nn.Module):
         stride=1,
         padding=1,
         activation=nn.SELU(),
-        device="cpu",
     ):
         super(EncodingBoxSubStage, self).__init__()
 
-        self.activation_function = activation.to(device)
+        self.activation_function = activation
         self.conv = nn.Conv2d(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -32,8 +33,8 @@ class EncodingBoxSubStage(nn.Module):
             dilation=dilation,
             stride=stride,
             padding=padding,
-        ).to(device)
-        self.batch_norm = nn.BatchNorm2d(num_features=out_channels).to(device)
+        )
+        self.batch_norm = nn.BatchNorm2d(num_features=out_channels)
 
     def forward(self, x):
         y = self.conv(x)
@@ -65,7 +66,6 @@ class DecodingBoxSubStage(EncodingBoxSubStage):
         activation=nn.SELU(),
         dropout=0.3,
         concatenate=False,
-        device="cpu",
     ):
         super().__init__(
             in_channels * (2 if concatenate else 1),
@@ -75,10 +75,9 @@ class DecodingBoxSubStage(EncodingBoxSubStage):
             stride,
             padding,
             activation,
-            device,
         )
         self.concatenate = concatenate
-        self.dropout = nn.Dropout(p=dropout).to(device)
+        self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, x, concat_with=None):
         x = self.dropout(x)
@@ -112,7 +111,6 @@ class EncodingBox(nn.Module):
         kernel_size=3,
         activation=nn.SELU(),
         rescale=True,
-        device="cpu",
     ):
         super(EncodingBox, self).__init__()
 
@@ -126,7 +124,6 @@ class EncodingBox(nn.Module):
                     stride=(2 if (dilation == 1 and rescale) else 1),
                     padding=dilation,
                     activation=activation,
-                    device=device,
                 )
                 for dilation in range(1, 5)
             ]
@@ -159,7 +156,6 @@ class DecodingBox(nn.Module):
         activation=nn.SELU(),
         final_activation=nn.SELU(),
         dropout=0.2,
-        device="cpu",
     ):
         super(DecodingBox, self).__init__()
 
@@ -181,7 +177,6 @@ class DecodingBox(nn.Module):
                     activation=(activation if (dilation != 1) else final_activation),
                     dropout=dropout,
                     concatenate={1: False, 2: True, 3: False, 4: True}[dilation],
-                    device=device,
                 )
                 for dilation in reversed(range(1, 5))
             ]
@@ -199,12 +194,12 @@ class DecodingBox(nn.Module):
         return x
 
 
-class MResUNet(nn.Module):
+class MResUNet(pl.LightningModule):
     """
     The modified Residual U-Net as specified in https://arxiv.org/pdf/2003.06135.pdf
     """
 
-    def __init__(self, map_size=40, device="cpu"):
+    def __init__(self, map_size=40):
         super(MResUNet, self).__init__()
 
         # Four encoding boxes
@@ -215,19 +210,18 @@ class MResUNet(nn.Module):
                     out_channels=64,
                     kernel_size=3,
                     rescale=False,
-                    device=device,
                 ),
                 EncodingBox(
-                    in_channels=64, out_channels=128, kernel_size=3, device=device
+                    in_channels=64, out_channels=128, kernel_size=3
                 ),
                 EncodingBox(
-                    in_channels=128, out_channels=256, kernel_size=3, device=device
+                    in_channels=128, out_channels=256, kernel_size=3
                 ),
                 EncodingBox(
-                    in_channels=256, out_channels=512, kernel_size=3, device=device
+                    in_channels=256, out_channels=512, kernel_size=3
                 ),
             ]
-        ).to(device)
+        )
 
         # Four decoding boxes
         self.decoding = nn.ModuleList(
@@ -238,7 +232,6 @@ class MResUNet(nn.Module):
                     final_channels=128,
                     kernel_size=3,
                     dropout=0.2,
-                    device=device,
                 ),
                 DecodingBox(
                     in_channels=128,
@@ -246,7 +239,6 @@ class MResUNet(nn.Module):
                     final_channels=64,
                     kernel_size=3,
                     dropout=0.2,
-                    device=device,
                 ),
                 DecodingBox(
                     in_channels=64,
@@ -255,15 +247,14 @@ class MResUNet(nn.Module):
                     kernel_size=3,
                     dropout=0.2,
                     final_activation=nn.Linear(map_size, map_size),
-                    device=device,
                 ),
             ]
-        ).to(device)
+        )
 
         # A convolution to divide the number of channels by 2 before the decoding stage
         self.reduce_channel = nn.Conv2d(
             in_channels=512, out_channels=256, kernel_size=3, padding=1
-        ).to(device)
+        )
 
     def forward(self, x):
 
@@ -283,3 +274,29 @@ class MResUNet(nn.Module):
             x = box(x, d4=d4_list[2 - i], d2=d2_list[2 - i])
 
         return x
+
+    def configure_optimizers(self, lr=1e-3, step_size=1):
+        optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size)
+        return [optimizer], [lr_scheduler]
+
+
+    def training_step(self, batch, batch_idx):
+        x, y = batch
+        y_hat = self(x)
+        loss = F.mse_loss(y_hat, y)
+        self.log("train_loss", loss)
+        return loss
+
+
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
+        y_hat = self(x)
+        val_loss = F.mse_loss(y_hat, y)
+        self.log("val_loss", val_loss)
+
+
+    def predict_step(self, batch, batch_idx):
+        x, y = batch
+        pred = self(x)
+        return pred
