@@ -12,14 +12,17 @@ from torch.utils.data import DataLoader
 from lensit.clusterlens import lensingmap
 
 from directories import TRAINING_LENSIT_DIR, VALIDATION_LENSIT_DIR
+
 # from data_parameters import gupta_map_parameters
-from data_parameters import MapParameters
+from map_parameters import MapParameters
+
 
 def initialize_camb(cambinifile):
     print("Initializing CAMB...", end="")
     pars = camb.read_ini(op.join(getenv("CAMBINIDIR"), cambinifile + ".ini"))
     print("Done")
     return camb.get_results(pars)
+
 
 def get_cluster_maps(
     cambinifile,
@@ -40,18 +43,20 @@ def get_cluster_maps(
             cambinifile, profname, npix, lpix_amin, ellmaxsky, M200, z, nsims_per_mass
         )
         print("Using libdir {}".format(libdir))
-        datasets.append(
-            lensingmap.cluster_maps(
-                libdir,
-                npix,
-                lpix_amin,
-                nsims_per_mass,
-                results,
-                {"M200c": M200, "z": z},
-                profilename=profname,
-                ellmax_sky=ellmaxsky,
-            )
+        obj = lensingmap.cluster_maps(
+            libdir,
+            npix,
+            lpix_amin,
+            nsims_per_mass,
+            results,
+            {"M200c": M200, "z": z},
+            profilename=profname,
+            ellmax_sky=ellmaxsky,
         )
+        kappa_map = obj.get_kappa_map(M200, z)
+        datasets += [
+            (obj.get_obs_map(idx, "t"), kappa_map) for idx in range(nsims_per_mass)
+        ]
 
     return datasets
 
@@ -62,7 +67,6 @@ class LensingMapDataset(Dataset):
     def __init__(
         self,
         cambinifile,
-        results,
         M200_list,
         nsims_per_mass,
         npix,
@@ -70,9 +74,10 @@ class LensingMapDataset(Dataset):
         ellmaxsky,
         z,
         profname,
+        results,
         transform=None,
     ):
-        self.datasets = get_cluster_maps(
+        self.dataset = get_cluster_maps(
             cambinifile,
             results,
             nsims_per_mass,
@@ -95,11 +100,8 @@ class LensingMapDataset(Dataset):
         return self.nsims
 
     def __getitem__(self, idx):
-        i = int(idx // self.nsims_per_mass)
-        x = self.datasets[i]
-        sample = [torch.from_numpy(
-            x.get_obs_map(idx % self.nsims_per_mass, "t")
-        ), torch.from_numpy(x.get_kappa_map(self.M200_list[i], self.z))]
+
+        sample = [torch.from_numpy(i).float()[None, :] for i in self.dataset[idx]]
 
         if self.transform:
             sample = self.transform(sample)
@@ -112,11 +114,12 @@ class LensingMapDataModule(pl.LightningDataModule):
 
     def __init__(
         self,
+        results,
         map_parameters: MapParameters,
         training_nsims_per_mass,
         validation_nsims_per_mass,
         batch_size,
-        transform
+        transform,
     ):
         super().__init__()
         self.map_parameters = map_parameters
@@ -124,24 +127,20 @@ class LensingMapDataModule(pl.LightningDataModule):
         self.validation_nsims_per_mass = validation_nsims_per_mass
         self.batch_size = batch_size
         self.transform = transform
-
-    def setup(self, stage=None):
-
-        # Assign Train/val split(s) for use in Dataloaders
-        if stage in (None, "fit"):
-            os.environ["LENSIT"] = TRAINING_LENSIT_DIR
-            self.training_dataset = LensingMapDataset(
-                **self.map_parameters.parameters,
-                nsims_per_mass=self.training_nsims_per_mass,
-                transform=self.transform,
-            )
-            os.environ["LENSIT"] = VALIDATION_LENSIT_DIR
-            self.validation_dataset = LensingMapDataset(
-                **self.map_parameters.parameters,
-                nsims_per_mass=self.validation_nsims_per_mass,
-                transform=self.transform,
-            )
-
+        os.environ["LENSIT"] = TRAINING_LENSIT_DIR
+        self.training_dataset = LensingMapDataset(
+            **self.map_parameters.parameters,
+            results=results,
+            nsims_per_mass=self.training_nsims_per_mass,
+            transform=self.transform,
+        )
+        os.environ["LENSIT"] = VALIDATION_LENSIT_DIR
+        self.validation_dataset = LensingMapDataset(
+            **self.map_parameters.parameters,
+            results=results,
+            nsims_per_mass=self.validation_nsims_per_mass,
+            transform=self.transform,
+        )
 
     def train_dataloader(self):
         return DataLoader(self.training_dataset, batch_size=self.batch_size)
