@@ -39,11 +39,11 @@ def get_cluster_maps(
             lpix_amin=lpix_amin,
             nsims=nsims,
             cosmo=results,
-            profparams={"M200c": M200 * 10e14, "z": z},
+            profparams={"M200c": M200 * 1e14, "z": z},
             profilename=profname,
             ellmax_sky=ellmaxsky,
         )
-        kappa_maps += [[obj.get_kappa_map(M200 * 10e14, z), M200]]
+        kappa_maps += [[obj.get_kappa_map(M200 * 1e14, z), M200 * 1e14]]
         maps += [
             [*(obj.get_obs_map(idx, f).astype(float) for f in ["t", "q", "u"]), i]
             for idx in range(nsims)
