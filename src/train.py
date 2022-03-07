@@ -29,7 +29,11 @@ def main(args):
     dm = MapDataModule(**vars(args), transform=None)
     dm.setup()
 
-    model = MResUNet(**vars(args), map_size=dm.npix)
+    if args.model == "mresunet":
+        model = MResUNet(**vars(args), map_size=dm.npix)
+    else:
+        model = ResNet(**vars(args), npix=dm.npix)
+
     trainer = Trainer.from_argparse_args(
         args, callbacks=[checkpoint_callback], logger=logger
     )
@@ -48,7 +52,7 @@ if __name__ == "__main__":
         type=str,
         default="mresunet",
         help="The model to use",
-        choices=["mresunet", "resunet"],
+        choices=["mresunet", "resnet"],
     )
     parser.add_argument(
         "--train_dir",
@@ -75,8 +79,10 @@ if __name__ == "__main__":
     temp_args, _ = parser.parse_known_args()
 
     if temp_args.model == "mresunet":
-        print("adding")
         parser = MResUNet.add_model_specific_args(parser)
+
+    if temp_args.model == "resnet":
+        parser = ResNet.add_model_specific_args(parser)
 
     args = parser.parse_args()
 
