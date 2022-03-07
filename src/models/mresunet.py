@@ -5,7 +5,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-
 class EncodingBoxSubStage(nn.Module):
     """
     An encoding sub stage that performs convolution,
@@ -199,8 +198,11 @@ class MResUNet(pl.LightningModule):
     The modified Residual U-Net as specified in https://arxiv.org/pdf/2003.06135.pdf
     """
 
-    def __init__(self, map_size=40):
+    def __init__(self, map_size=40, **kwargs):
         super(MResUNet, self).__init__()
+
+        print(kwargs)
+        self.lr = kwargs["lr"]
 
         # Four encoding boxes
         self.encoding = nn.ModuleList(
@@ -211,15 +213,9 @@ class MResUNet(pl.LightningModule):
                     kernel_size=3,
                     rescale=False,
                 ),
-                EncodingBox(
-                    in_channels=64, out_channels=128, kernel_size=3
-                ),
-                EncodingBox(
-                    in_channels=128, out_channels=256, kernel_size=3
-                ),
-                EncodingBox(
-                    in_channels=256, out_channels=512, kernel_size=3
-                ),
+                EncodingBox(in_channels=64, out_channels=128, kernel_size=3),
+                EncodingBox(in_channels=128, out_channels=256, kernel_size=3),
+                EncodingBox(in_channels=256, out_channels=512, kernel_size=3),
             ]
         )
 
@@ -256,6 +252,12 @@ class MResUNet(pl.LightningModule):
             in_channels=512, out_channels=256, kernel_size=3, padding=1
         )
 
+    @staticmethod
+    def add_model_specific_args(parent_parser):
+        parser = parent_parser.add_argument_group("MResUNet")
+        parser.add_argument("--lr", type=float, default=0.001)
+        return parent_parser
+
     def forward(self, x):
 
         # Store outputs of sub-stages with dilation rates: 2, 4
@@ -275,11 +277,10 @@ class MResUNet(pl.LightningModule):
 
         return x
 
-    def configure_optimizers(self, lr=1e-3, step_size=1):
-        optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+    def configure_optimizers(self, step_size=1):
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size)
         return [optimizer], [lr_scheduler]
-
 
     def training_step(self, batch, batch_idx):
         x, y = batch
@@ -288,13 +289,11 @@ class MResUNet(pl.LightningModule):
         self.log("train_loss", loss)
         return loss
 
-
     def validation_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
         val_loss = F.mse_loss(y_hat, y)
         self.log("val_loss", val_loss)
-
 
     def predict_step(self, batch, batch_idx):
         x, y = batch
