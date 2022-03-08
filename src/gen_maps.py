@@ -21,7 +21,17 @@ def initialize_camb(cambinifile):
 
 
 def get_cluster_maps(
-    cambinifile, results, nsims, npix, lpix_amin, ellmaxsky, mass, z, profname, **kwargs
+    cambinifile,
+    results,
+    nsims,
+    npix,
+    lpix_amin,
+    ellmaxsky,
+    mass,
+    z,
+    profname,
+    cmb_exp,
+    **kwargs
 ):
 
     kappa_maps = []
@@ -30,7 +40,15 @@ def get_cluster_maps(
 
     for i, M200 in enumerate(tqdm(mass)):
         libdir = lensingmap.get_cluster_libdir(
-            cambinifile, profname, npix, lpix_amin, ellmaxsky, M200, z, nsims
+            cambinifile,
+            profname,
+            npix,
+            lpix_amin,
+            ellmaxsky,
+            M200,
+            z,
+            nsims,
+            cmbexp=cmb_exp,
         )
         print("Using libdir {}".format(libdir))
         obj = lensingmap.cluster_maps(
@@ -42,16 +60,13 @@ def get_cluster_maps(
             profparams={"M200c": M200 * 1e14, "z": z},
             profilename=profname,
             ellmax_sky=ellmaxsky,
+            cmb_exp=cmb_exp,
         )
         kappa_maps += [[obj.get_kappa_map(M200 * 1e14, z), M200]]
         maps += [
             [
-                np.concatenate(
-                    (
-                        obj.get_obs_map(idx, "t").astype(float)[None, :],
-                        obj.get_obs_map(idx, "u").astype(float),
-                    ),
-                    axis=0,
+                np.array(
+                    [obj.get_obs_map(idx, f).astype(float) for f in ["t", "e", "b"]]
                 ),
                 i,
             ]
@@ -84,6 +99,12 @@ def get_cluster_maps(
     default=0.3,
     show_default=True,
     help="Physical size of a pixel in arcmin",
+)
+@click.option(
+    "--cmb_exp",
+    default="5muKamin_1amin",
+    show_default=True,
+    help="CMB experiment to use",
 )
 @click.option("--z", default=0.7, show_default=True, help="Redshift")
 @click.option(

@@ -31,10 +31,11 @@ class MapDataset(Dataset):
     def __getitem__(self, idx):
 
         sample = []
+
         if self.input_type == "t_map":
             sample.append(torch.from_numpy(self.maps[idx][0][0]).float()[None, :])
         elif self.input_type == "teb_maps":
-            sample.append(torch.from_numpy(self.maps[idx][:-1][0]).float())
+            sample.append(torch.from_numpy(np.array(self.maps[idx][0])).float())
 
         if self.output_type == "kappa_map":
             sample.append(
@@ -44,7 +45,9 @@ class MapDataset(Dataset):
             )
         elif self.output_type == "mass":
             sample.append(
-                torch.Tensor([self.kappa_maps[self.maps[idx][-1]][-1]]).float()[None, :]
+                torch.Tensor([self.kappa_maps[self.maps[idx][-1]][-1]]).float()[
+                    None, None, :
+                ]
             )
 
         if self.transform:
