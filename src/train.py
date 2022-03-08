@@ -18,19 +18,23 @@ checkpoint_callback = ModelCheckpoint(
     filename="clusterlens-{epoch:02d}-{val_loss:.2f}",
     mode="min",
     # save_top_k=3,
-    save_last=True,
+    # save_last=True,
 )
 
 logger = TensorBoardLogger(name="my_model", save_dir="logs")
 
 
-def main(args):
+def main(args, output_type):
 
     dm = MapDataModule(**vars(args), transform=None)
     dm.setup()
 
     if args.model == "mresunet":
-        model = MResUNet(**vars(args), map_size=dm.npix)
+        model = MResUNet(
+            **vars(args),
+            map_size=dm.npix,
+            num_channels=(3 if dm.input_type == "teb_maps" else 1)
+        )
     else:
         model = ResNet(**vars(args), npix=dm.npix)
 
@@ -75,6 +79,18 @@ if __name__ == "__main__":
         help="The number of workers in the dataloader",
         default=1,
     )
+    parser.add_argument(
+        "--output_type",
+        default="kappa_map",
+        help="The output of the neural net",
+        choices=["kappa_map", "mass"],
+    )
+    parser.add_argument(
+        "--input_type",
+        default="tmap",
+        help="The input of the neural net",
+        choices=["t_map", "teb_maps"],
+    )
 
     temp_args, _ = parser.parse_known_args()
 
@@ -86,4 +102,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    main(args)
+    main(args, temp_args.output_type)

@@ -43,9 +43,18 @@ def get_cluster_maps(
             profilename=profname,
             ellmax_sky=ellmaxsky,
         )
-        kappa_maps += [[obj.get_kappa_map(M200 * 1e14, z), M200 * 1e14]]
+        kappa_maps += [[obj.get_kappa_map(M200 * 1e14, z), M200]]
         maps += [
-            [*(obj.get_obs_map(idx, f).astype(float) for f in ["t", "q", "u"]), i]
+            [
+                np.concatenate(
+                    (
+                        obj.get_obs_map(idx, "t").astype(float)[None, :],
+                        obj.get_obs_map(idx, "u").astype(float),
+                    ),
+                    axis=0,
+                ),
+                i,
+            ]
             for idx in range(nsims)
         ]
 

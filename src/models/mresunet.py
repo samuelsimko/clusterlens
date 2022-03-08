@@ -198,24 +198,39 @@ class MResUNet(pl.LightningModule):
     The modified Residual U-Net as specified in https://arxiv.org/pdf/2003.06135.pdf
     """
 
-    def __init__(self, map_size=40, **kwargs):
+    def __init__(
+        self, map_size=40, lr=0.001, num_channels=1, output_type="kappa_map", **kwargs
+    ):
         super(MResUNet, self).__init__()
 
-        print(kwargs)
-        self.lr = kwargs["lr"]
+        self.lr = lr
+        self.output_type = output_type
+        self.num_channels = num_channels
 
         # Four encoding boxes
         self.encoding = nn.ModuleList(
             [
                 EncodingBox(
-                    in_channels=1,
-                    out_channels=64,
+                    in_channels=num_channels,
+                    out_channels=64 * num_channels,
                     kernel_size=3,
                     rescale=False,
                 ),
-                EncodingBox(in_channels=64, out_channels=128, kernel_size=3),
-                EncodingBox(in_channels=128, out_channels=256, kernel_size=3),
-                EncodingBox(in_channels=256, out_channels=512, kernel_size=3),
+                EncodingBox(
+                    in_channels=64 * num_channels,
+                    out_channels=128 * num_channels,
+                    kernel_size=3,
+                ),
+                EncodingBox(
+                    in_channels=128 * num_channels,
+                    out_channels=256 * num_channels,
+                    kernel_size=3,
+                ),
+                EncodingBox(
+                    in_channels=256 * num_channels,
+                    out_channels=512 * num_channels,
+                    kernel_size=3,
+                ),
             ]
         )
 
@@ -223,22 +238,22 @@ class MResUNet(pl.LightningModule):
         self.decoding = nn.ModuleList(
             [
                 DecodingBox(
-                    in_channels=256,
-                    out_channels=256,
-                    final_channels=128,
+                    in_channels=256 * num_channels,
+                    out_channels=256 * num_channels,
+                    final_channels=128 * num_channels,
                     kernel_size=3,
                     dropout=0.2,
                 ),
                 DecodingBox(
-                    in_channels=128,
-                    out_channels=128,
-                    final_channels=64,
+                    in_channels=128 * num_channels,
+                    out_channels=128 * num_channels,
+                    final_channels=64 * num_channels,
                     kernel_size=3,
                     dropout=0.2,
                 ),
                 DecodingBox(
-                    in_channels=64,
-                    out_channels=64,
+                    in_channels=64 * num_channels,
+                    out_channels=64 * num_channels,
                     final_channels=1,
                     kernel_size=3,
                     dropout=0.2,
@@ -249,8 +264,14 @@ class MResUNet(pl.LightningModule):
 
         # A convolution to divide the number of channels by 2 before the decoding stage
         self.reduce_channel = nn.Conv2d(
-            in_channels=512, out_channels=256, kernel_size=3, padding=1
+            in_channels=512 * num_channels,
+            out_channels=256 * num_channels,
+            kernel_size=3,
+            padding=1,
         )
+
+        if self.output_type == "mass":
+            self.avg = nn.AvgPool2d(map_size)
 
     @staticmethod
     def add_model_specific_args(parent_parser):
@@ -275,12 +296,15 @@ class MResUNet(pl.LightningModule):
         for i, box in enumerate(self.decoding):
             x = box(x, d4=d4_list[2 - i], d2=d2_list[2 - i])
 
+        if self.output_type == "mass":
+            x = self.avg(x)
+
         return x
 
     def configure_optimizers(self, step_size=1):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
-        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size)
-        return [optimizer], [lr_scheduler]
+        # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size)
+        return [optimizer]  # , [lr_scheduler]
 
     def training_step(self, batch, batch_idx):
         x, y = batch
