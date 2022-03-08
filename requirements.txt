@@ -1,8 +1,7 @@
--e git+https://github.com/carronj/LensIt.git@bd2032778d75d6ed52b87418ae4cc54c5e6a5d24#egg=lensit
+-e git+https://github.com/carronj/LensIt.git@5d7374a1c0091fe81f89450040350cd27cbdec67#egg=lensit
 black
 camb
 click
-pickle
 pytorch-lightning
 torch
 torchvision
