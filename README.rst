@@ -6,34 +6,45 @@ About
 -----
 
 This repository contains deep learning models to estimate the masses of galaxy clusters
-using weak gravitational CMB lensing.
+from lensed CMB maps.
+
+Features
+--------
+
+- Generation of training data using `LensIt <https://github.com/carronj/LensIt>`_
+- MResUNet and ResNet models
+- Training on T or TEB maps
+- Two labels available: Kappa map or cluster mass.
 
 Usage
 -----
 
 Create a virtual environment and activate it.
-Then, install the requirements:
+Install the requirements:
 
 .. code-block:: console
 
    $ cd clusterlens
    $ pip install -r requirements.txt
 
-Change the LENSIT environment variable to somewhere safe to write (for example,
-clusterlens/pwd/data/cached)
+Create simulated maps by executing `gen_maps.py`
 
 .. code-block:: console
 
-   $ export LENSIT=$(pwd)/data/cached
+   $ python src/gen_maps.py 1 2 3 4 traindata --nsims 64 --cambinifile path/to/cambinifile
 
-Change the CAMBINIDIR environment variable to the path of your CAMB `inifiles` folder
+Here, the script generates maps with masses in (1, 2, 3, 4) * 1e14 M☉.
+`64` maps are created for each mass.
+It will store the maps in the directory `traindata`.
+
+
+To train a model, executing the `train.py` script.
 
 .. code-block:: console
 
-   $ export CAMBINIDIR=/path/to/your/inifiles
+   $ python src/train.py --model mresunet --train_dir traindata --val_dir valdata --batch_size 16 --max_epochs 30
 
-You can now train the MResUNet on small simulated data by running a training script.
+For more information on the scripts, call them with the argument `--help`.
 
-.. code-block:: console
-
-   $ python src/train.py
+The training will create a log folder, which can be opened with Tensorboard.
+If checkpointing is enabled, the trained model will be saved.
