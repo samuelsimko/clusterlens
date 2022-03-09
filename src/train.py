@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 from argparse import ArgumentParser
 
+import torch
+
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 
+from torchvision.transforms import transforms
 
 from models.mresunet import MResUNet
 from models.resnet import ResNet
@@ -12,21 +15,36 @@ from models.resnet import ResNet
 from mapdatamodule import MapDataModule
 
 
-checkpoint_callback = ModelCheckpoint(
-    monitor="val_loss",
-    dirpath="checkpoints",
-    filename="clusterlens-{epoch:02d}-{val_loss:.2f}",
-    mode="min",
-    # save_top_k=3,
-    # save_last=True,
-)
-
-logger = TensorBoardLogger(name="my_model", save_dir="logs")
-
-
-def main(args, output_type):
-
+def get_std_mean():
+    """ Return the std and the mean of the training dataset features"""
     dm = MapDataModule(**vars(args), transform=None)
+    dm.setup()
+    dm.batch_size = len(dm.train_dataset)
+    dl = dm.train_dataloader()
+    x, _ = next(iter(dl))
+    return torch.std_mean(x, [0, 2, 3])
+
+
+def main(args):
+
+    checkpoint_callback = ModelCheckpoint(
+        monitor="val_loss",
+        dirpath="checkpoints",
+        filename=args.model + "-{epoch:02d}-{val_loss:.4f}",
+        mode="min",
+        # save_top_k=3,
+        # save_last=True,
+    )
+
+    logger = TensorBoardLogger(name=args.model, save_dir="logs2")
+
+    # Get mean and std of training datasets
+    x_std, x_mean = get_std_mean()
+    print("std: {}, mean: {}".format(x_std, x_mean))
+
+    transform = transforms.Normalize(mean=x_mean, std=x_std)
+
+    dm = MapDataModule(**vars(args), transform=transform)
     dm.setup()
 
     if args.model == "mresunet":
@@ -102,4 +120,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    main(args, temp_args.output_type)
+    main(args)

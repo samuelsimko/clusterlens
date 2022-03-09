@@ -48,10 +48,11 @@ class MapDataset(Dataset):
                 torch.Tensor([self.kappa_maps[self.maps[idx][-1]][-1]]).float()[
                     None, None, :
                 ]
+                / 500
             )
 
         if self.transform:
-            sample = self.transform(sample)
+            sample[0] = self.transform(sample[0])
 
         return sample
 
@@ -108,6 +109,5 @@ class MapDataModule(pl.LightningDataModule):
         return DataLoader(
             self.val_dataset,
             batch_size=self.batch_size,
-            shuffle=True,
             num_workers=self.num_workers,
         )
