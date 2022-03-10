@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import os.path as op
+import os
 import numpy as np
 import pickle
 
@@ -14,40 +14,65 @@ class MapDataset(Dataset):
     """Map Dataset"""
 
     def __init__(
-        self, path, transform=None, output_type="kappa_map", input_type="tmap"
+        self, paths, transform=None, output_type="kappa_map", input_type="tmap"
     ):
         super().__init__()
-        self.args = pickle.load(open(op.join(path, "args"), "rb"))
-        self.npix = self.args["npix"]
-        self.maps = np.load(op.join(path, "maps.npy"), allow_pickle=True)
-        self.kappa_maps = np.load(op.join(path, "kappa_maps.npy"), allow_pickle=True)
+
         self.transform = transform
         self.output_type = output_type
         self.input_type = input_type
 
+        self.args = []
+        self.maps = []
+        self.kappa_maps = []
+
+        for path in paths:
+            self.args.append(pickle.load(open(os.path.join(path, "args"), "rb")))
+            self.maps.append(np.load(os.path.join(path, "maps.npy"), allow_pickle=True))
+            self.kappa_maps.append(
+                np.load(os.path.join(path, "kappa_maps.npy"), allow_pickle=True)
+            )
+
+        self.npix = self.args[0]["npix"]
+
+        # Get cumulated sum of the number of maps in each path - 1
+        self.len_cumsum = (
+            np.cumsum([len(arg["mass"]) * arg["nsims"] for arg in self.args]) - 1
+        )
+        self.len = self.len_cumsum[-1] + 1
+
     def __len__(self):
-        return len(self.args["mass"]) * self.args["nsims"]
+        return self.len
 
     def __getitem__(self, idx):
+
+        # Get index to use within self.maps
+        map_idx = np.searchsorted(self.len_cumsum, idx)
+        if map_idx != 0:
+            idx -= self.len_cumsum[map_idx - 1] + 1
 
         sample = []
 
         if self.input_type == "t_map":
-            sample.append(torch.from_numpy(self.maps[idx][0][0]).float()[None, :])
-        elif self.input_type == "teb_maps":
-            sample.append(torch.from_numpy(np.array(self.maps[idx][0])).float())
-
-        if self.output_type == "kappa_map":
             sample.append(
-                torch.from_numpy(self.kappa_maps[self.maps[idx][-1]][0]).float()[
-                    None, :
-                ]
+                torch.from_numpy(self.maps[map_idx][idx][0][0]).float()[None, :]
             )
-        elif self.output_type == "mass":
+        elif self.input_type == "teb_maps":
             sample.append(
-                torch.Tensor([self.kappa_maps[self.maps[idx][-1]][-1]]).float()[
-                    None, None, :
-                ]
+                torch.from_numpy(np.array(self.maps[map_idx][idx][0])).float()
+            )
+
+        if self.output_type in ["kappa_map", "both"]:
+            sample.append(
+                torch.from_numpy(
+                    self.kappa_maps[map_idx][self.maps[map_idx][idx][-1]][0]
+                ).float()[None, :]
+            )
+        if self.output_type in ["mass", "both"]:
+            sample.append(
+                torch.Tensor(
+                    [self.kappa_maps[map_idx][self.maps[map_idx][idx][-1]][-1]]
+                ).float()[None, None, :]
                 / 500
             )
 
@@ -62,8 +87,8 @@ class MapDataModule(pl.LightningDataModule):
 
     def __init__(
         self,
-        train_dir,
-        val_dir,
+        train_dirs,
+        val_dirs,
         batch_size,
         transform,
         num_workers,
@@ -72,30 +97,32 @@ class MapDataModule(pl.LightningDataModule):
         **args
     ):
         super().__init__()
-        self.train_dir = train_dir
-        self.val_dir = val_dir
+        self.train_dirs = train_dirs
+        self.val_dirs = val_dirs
         self.batch_size = batch_size
         self.transform = transform
         self.num_workers = num_workers
         self.output_type = output_type
         self.input_type = input_type
-        self.npix = pickle.load(open(op.join(train_dir, "args"), "rb"))["npix"]
 
     def setup(self, stage=None):
         if stage == "fit" or stage is None:
             self.train_dataset = MapDataset(
-                self.train_dir,
+                self.train_dirs,
                 self.transform,
                 self.output_type,
                 input_type=self.input_type,
             )
+            self.npix = self.train_dataset.npix
+
         if stage == "val" or stage is None:
             self.val_dataset = MapDataset(
-                self.val_dir,
+                self.val_dirs,
                 self.transform,
                 self.output_type,
                 input_type=self.input_type,
             )
+            self.npix = self.val_dataset.npix
 
     def train_dataloader(self):
         return DataLoader(

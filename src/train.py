@@ -16,7 +16,7 @@ from mapdatamodule import MapDataModule
 
 
 def get_std_mean():
-    """ Return the std and the mean of the training dataset features"""
+    """Return the std and the mean of the training dataset features"""
     dm = MapDataModule(**vars(args), transform=None)
     dm.setup()
     dm.batch_size = len(dm.train_dataset)
@@ -77,15 +77,17 @@ if __name__ == "__main__":
         choices=["mresunet", "resnet"],
     )
     parser.add_argument(
-        "--train_dir",
+        "--train_dirs",
+        nargs="+",
         type=str,
-        help="The path to the directory containing the training data",
+        help="The paths to the directories containing the training data",
         required=True,
     )
     parser.add_argument(
-        "--val_dir",
+        "--val_dirs",
+        nargs="+",
         type=str,
-        help="The path to the directory containing the validation data",
+        help="The paths to the directories containing the validation data",
         required=True,
     )
     parser.add_argument(
@@ -101,7 +103,7 @@ if __name__ == "__main__":
         "--output_type",
         default="kappa_map",
         help="The output of the neural net",
-        choices=["kappa_map", "mass"],
+        choices=["kappa_map", "mass", "both"],
     )
     parser.add_argument(
         "--input_type",
