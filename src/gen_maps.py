@@ -105,6 +105,10 @@ def get_cluster_maps(
     default="5muKamin_1amin",
     show_default=True,
     help="CMB experiment to use",
+    type=click.Choice(["5muKamin_1amin", "Planck",
+                       "Plank_65", "S4", "S4_opti", "S5",
+                       "S6", "SO", "SOb1", "PB85", "PB5",
+                       "fcy_mark"], case_sensitive=False)
 )
 @click.option("--z", default=0.7, show_default=True, help="Redshift")
 @click.option(
