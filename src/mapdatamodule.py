@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
 import os
-import numpy as np
 import pickle
 
-import torch
+import numpy as np
 import pytorch_lightning as pl
-
-from torch.utils.data import Dataset
-from torch.utils.data import DataLoader
+import torch
+from torch.utils.data import DataLoader, Dataset
 
 
 class MapDataset(Dataset):
@@ -57,7 +55,7 @@ class MapDataset(Dataset):
             sample.append(
                 torch.from_numpy(self.maps[map_idx][idx][0][0]).float()[None, :]
             )
-        elif self.input_type == "teb_maps":
+        elif self.input_type == "tqu_maps":
             sample.append(
                 torch.from_numpy(np.array(self.maps[map_idx][idx][0])).float()
             )

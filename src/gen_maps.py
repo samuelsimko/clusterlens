@@ -2,13 +2,14 @@
 import os
 import numpy as np
 import pickle
-
+import random
 
 import camb
 import click
 
 from lensit.clusterlens import lensingmap
 from tqdm import tqdm
+from pytorch_lightning import seed_everything
 
 
 def initialize_camb(cambinifile):
@@ -66,7 +67,7 @@ def get_cluster_maps(
         maps += [
             [
                 np.array(
-                    [obj.get_obs_map(idx, f).astype(float) for f in ["t", "e", "b"]]
+                    [obj.get_obs_map(idx, f).astype(float) for f in ["t", "q", "u"]]
                 ),
                 i,
             ]
@@ -105,10 +106,23 @@ def get_cluster_maps(
     default="5muKamin_1amin",
     show_default=True,
     help="CMB experiment to use",
-    type=click.Choice(["5muKamin_1amin", "Planck",
-                       "Plank_65", "S4", "S4_opti", "S5",
-                       "S6", "SO", "SOb1", "PB85", "PB5",
-                       "fcy_mark"], case_sensitive=False)
+    type=click.Choice(
+        [
+            "5muKamin_1amin",
+            "Planck",
+            "Plank_65",
+            "S4",
+            "S4_opti",
+            "S5",
+            "S6",
+            "SO",
+            "SOb1",
+            "PB85",
+            "PB5",
+            "fcy_mark",
+        ],
+        case_sensitive=False,
+    ),
 )
 @click.option("--z", default=0.7, show_default=True, help="Redshift")
 @click.option(
@@ -124,8 +138,14 @@ def get_cluster_maps(
     required=True,
     type=click.Path(exists=True),
 )
+@click.option("--seed", help="Seed used to generate the maps", default=None, type=int)
 def genmaps(**args):
     """A program to generate CMB lensed maps."""
+    if not args["seed"]:
+        args["seed"] = random.randint(0, 2**32 - 1)
+    print("Seeding everything with seed {}...".format(args["seed"]))
+    seed_everything(args["seed"])
+
     args["destdir"] = os.path.join(os.getcwd(), args["destdir"])
     results = initialize_camb(args["cambinifile"])
     os.environ["LENSIT"] = args["destdir"]

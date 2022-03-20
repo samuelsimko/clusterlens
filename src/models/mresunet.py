@@ -199,73 +199,76 @@ class MResUNet(pl.LightningModule):
     """
 
     def __init__(
-        self, map_size=40, lr=0.001, num_channels=1, output_type="kappa_map", **kwargs
+        self,
+        map_size=40,
+        lr=0.001,
+        input_channels=1,
+        nb_enc_boxes=4,
+        nb_channels_first_box=64,
+        output_type="kappa_map",
+        loss="mse",
+        **kwargs
     ):
         super(MResUNet, self).__init__()
 
         self.lr = lr
         self.output_type = output_type
-        self.num_channels = num_channels
+        self.input_channels = input_channels
+        self.nb_enc_boxes = nb_enc_boxes
+        self.nb_channels_first_box = nb_channels_first_box
 
-        # Four encoding boxes
+        if loss == "msle":
+            self.loss = lambda x, y: F.mse_loss(torch.log(x + 1), torch.log(y + 1))
+        else:
+            self.loss = F.mse_loss
+
+        # `nb_enc_boxes` encoding boxes
         self.encoding = nn.ModuleList(
             [
                 EncodingBox(
-                    in_channels=num_channels,
-                    out_channels=64 * num_channels,
+                    in_channels=input_channels,
+                    out_channels=nb_channels_first_box,
                     kernel_size=3,
                     rescale=False,
                 ),
-                EncodingBox(
-                    in_channels=64 * num_channels,
-                    out_channels=128 * num_channels,
-                    kernel_size=3,
-                ),
-                EncodingBox(
-                    in_channels=128 * num_channels,
-                    out_channels=256 * num_channels,
-                    kernel_size=3,
-                ),
-                EncodingBox(
-                    in_channels=256 * num_channels,
-                    out_channels=512 * num_channels,
-                    kernel_size=3,
-                ),
+                *[
+                    EncodingBox(
+                        in_channels=(2**i) * nb_channels_first_box,
+                        out_channels=(2 ** (i + 1)) * nb_channels_first_box,
+                        kernel_size=3,
+                    )
+                    for i in range(nb_enc_boxes - 1)
+                ],
             ]
         )
 
-        # Four decoding boxes
+        # (`nb_enc_boxes` - 1) decoding boxes
         self.decoding = nn.ModuleList(
             [
+                *[
+                    DecodingBox(
+                        in_channels=(2 ** (i + 1)) * nb_channels_first_box,
+                        out_channels=(2 ** (i + 1)) * nb_channels_first_box,
+                        final_channels=(2 ** (i)) * nb_channels_first_box,
+                        kernel_size=3,
+                        dropout=0.2,
+                    )
+                    for i in reversed(range(nb_enc_boxes - 2))
+                ],
                 DecodingBox(
-                    in_channels=256 * num_channels,
-                    out_channels=256 * num_channels,
-                    final_channels=128 * num_channels,
-                    kernel_size=3,
-                    dropout=0.2,
-                ),
-                DecodingBox(
-                    in_channels=128 * num_channels,
-                    out_channels=128 * num_channels,
-                    final_channels=64 * num_channels,
-                    kernel_size=3,
-                    dropout=0.2,
-                ),
-                DecodingBox(
-                    in_channels=64 * num_channels,
-                    out_channels=64 * num_channels,
+                    in_channels=nb_channels_first_box,
+                    out_channels=nb_channels_first_box,
                     final_channels=1,
                     kernel_size=3,
                     dropout=0.2,
-                    final_activation=nn.Linear(map_size, map_size),
                 ),
             ]
         )
 
         # A convolution to divide the number of channels by 2 before the decoding stage
         self.reduce_channel = nn.Conv2d(
-            in_channels=512 * num_channels,
-            out_channels=256 * num_channels,
+            in_channels=(2 ** (nb_enc_boxes - 1)) * nb_channels_first_box,
+            out_channels=(2 ** (nb_enc_boxes - 2)) * nb_channels_first_box,
             kernel_size=3,
             padding=1,
         )
@@ -277,6 +280,8 @@ class MResUNet(pl.LightningModule):
     def add_model_specific_args(parent_parser):
         parser = parent_parser.add_argument_group("MResUNet")
         parser.add_argument("--lr", type=float, default=0.001)
+        parser.add_argument("--nb_enc_boxes", type=int, default=4)
+        parser.add_argument("--nb_channels_first_box", type=int, default=64)
         return parent_parser
 
     def forward(self, x):
@@ -294,7 +299,14 @@ class MResUNet(pl.LightningModule):
         # Decoding
         x = self.reduce_channel(x)
         for i, box in enumerate(self.decoding):
-            x = box(x, d4=d4_list[2 - i], d2=d2_list[2 - i])
+            x = box(
+                x,
+                d4=d4_list[self.nb_enc_boxes - 2 - i],
+                d2=d2_list[self.nb_enc_boxes - 2 - i],
+            )
+
+        if self.output_type == "kappa_map":
+            x = F.relu(x)
 
         if self.output_type == "mass":
             x = self.avg(x)
@@ -309,14 +321,14 @@ class MResUNet(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
-        loss = F.mse_loss(y_hat, y)
+        loss = self.loss(y_hat, y)
         self.log("train_loss", loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
-        val_loss = F.mse_loss(y_hat, y)
+        val_loss = self.loss(y_hat, y)
         self.log("val_loss", val_loss)
 
     def predict_step(self, batch, batch_idx):

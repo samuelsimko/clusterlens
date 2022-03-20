@@ -1,18 +1,16 @@
 # -*- coding: utf-8 -*-
+import random
 from argparse import ArgumentParser
 
 import torch
-
 from pytorch_lightning import Trainer, seed_everything
+from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
-
 from torchvision.transforms import transforms
 
+from mapdatamodule import MapDataModule
 from models.mresunet import MResUNet
 from models.resnet import ResNet
-
-from mapdatamodule import MapDataModule
 
 
 def get_std_mean():
@@ -27,22 +25,42 @@ def get_std_mean():
 
 def main(args):
 
+    if not args.seed:
+        args.seed = random.randint(0, 2**32 - 1)
+    print("Seeding everything with seed {}...".format(args.seed))
+    seed_everything(args.seed)
+
+    checkpoint_name = "_".join(
+        [args.model, args.loss, args.input_type, args.output_type, *args.train_dirs]
+    )
+
     checkpoint_callback = ModelCheckpoint(
         monitor="val_loss",
         dirpath="checkpoints",
-        filename=args.model + "-{epoch:02d}-{val_loss:.4f}",
+        filename=checkpoint_name + "-{epoch:02d}-{val_loss:.4f}",
         mode="min",
         # save_top_k=3,
         # save_last=True,
     )
 
-    logger = TensorBoardLogger(name=args.model, save_dir="logs2")
+    logger = TensorBoardLogger(name=checkpoint_name, save_dir="logs")
 
-    # Get mean and std of training datasets
-    x_std, x_mean = get_std_mean()
-    print("std: {}, mean: {}".format(x_std, x_mean))
+    if not args.std_mean:
+        # Get mean and std of training datasets
+        x_std, x_mean = get_std_mean()
+        print("std: {}, mean: {}".format(x_std, x_mean))
+    else:
+        x_std, x_mean = args.std_mean
+        print("std: {}, mean: {}".format(x_std, x_mean))
 
-    transform = transforms.Normalize(mean=x_mean, std=x_std)
+    transform = transforms.Compose(
+        [
+            transforms.Normalize(mean=x_mean, std=x_std),
+            transforms.Lambda(
+                lambda x: (torch.transpose(x, -2, -1) if torch.rand(1) < 0.5 else x)
+            ),
+        ]
+    )
 
     dm = MapDataModule(**vars(args), transform=transform)
     dm.setup()
@@ -51,7 +69,7 @@ def main(args):
         model = MResUNet(
             **vars(args),
             map_size=dm.npix,
-            num_channels=(3 if dm.input_type == "teb_maps" else 1)
+            input_channels=(3 if dm.input_type == "tqu_maps" else 1)
         )
     else:
         model = ResNet(**vars(args), npix=dm.npix)
@@ -69,6 +87,12 @@ if __name__ == "__main__":
     )
     parser = Trainer.add_argparse_args(parser)
 
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="The seed used for the training (random by default)",
+    )
     parser.add_argument(
         "--model",
         type=str,
@@ -109,7 +133,25 @@ if __name__ == "__main__":
         "--input_type",
         default="tmap",
         help="The input of the neural net",
-        choices=["t_map", "teb_maps"],
+        choices=["t_map", "tqu_maps"],
+    )
+    parser.add_argument(
+        "--std_mean",
+        nargs=2,
+        type=float,
+        help="The mean and the standard deviation to be used for the input normalization",
+        default=None,
+    )
+    parser.add_argument(
+        "--rotate_images",
+        help="Rotate the input images by 90 degrees with a probability of 0.5",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--loss",
+        help="The loss function to be used for the neural net",
+        choices=["mse", "msle"],
+        default="mse",
     )
 
     temp_args, _ = parser.parse_known_args()
