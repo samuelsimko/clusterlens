@@ -42,10 +42,25 @@ class ResNet(pl.LightningModule):
         npix: the width/height of the square matrix input.
     """
 
-    def __init__(self, nb_channels, kernel_size, nb_blocks, npix, **kwargs):
+    def __init__(
+        self,
+        input_channels,
+        nb_channels,
+        kernel_size,
+        nb_blocks,
+        npix,
+        loss="mse",
+        **kwargs
+    ):
         super().__init__()
         self.lr = kwargs["lr"]
-        self.conv0 = nn.Conv2d(1, nb_channels, kernel_size=1)
+
+        if loss == "msle":
+            self.loss = lambda x, y: F.mse_loss(torch.log(x + 1), torch.log(y + 1))
+        else:
+            self.loss = F.mse_loss
+
+        self.conv0 = nn.Conv2d(input_channels, nb_channels, kernel_size=1)
         self.resblocks = nn.Sequential(
             *(ResBlock(nb_channels, kernel_size) for _ in range(nb_blocks))
         )
@@ -59,6 +74,7 @@ class ResNet(pl.LightningModule):
         x = self.resblocks(x)
         x = self.conv1(x)
         x = self.lin(x)
+        x = F.relu(x)
         return x
 
     @staticmethod

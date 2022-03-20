@@ -72,7 +72,11 @@ def main(args):
             input_channels=(3 if dm.input_type == "tqu_maps" else 1)
         )
     else:
-        model = ResNet(**vars(args), npix=dm.npix)
+        model = ResNet(
+            **vars(args),
+            npix=dm.npix,
+            input_channels=(3 if dm.input_type == "tqu_maps" else 1)
+        )
 
     trainer = Trainer.from_argparse_args(
         args, callbacks=[checkpoint_callback], logger=logger
