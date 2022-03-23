@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
 import pickle
+import random
 
 import numpy as np
 import pytorch_lightning as pl
@@ -12,7 +13,11 @@ class MapDataset(Dataset):
     """Map Dataset"""
 
     def __init__(
-        self, paths, transform=None, output_type="kappa_map", input_type="tmap"
+        self,
+        paths,
+        transform=None,
+        output_type="kappa_map",
+        input_type="tmap",
     ):
         super().__init__()
 
@@ -23,12 +28,20 @@ class MapDataset(Dataset):
         self.args = []
         self.maps = []
         self.kappa_maps = []
+        self.unl_maps = []
+        self.len_maps = []
 
         for path in paths:
             self.args.append(pickle.load(open(os.path.join(path, "args"), "rb")))
             self.maps.append(np.load(os.path.join(path, "maps.npy"), allow_pickle=True))
             self.kappa_maps.append(
                 np.load(os.path.join(path, "kappa_maps.npy"), allow_pickle=True)
+            )
+            self.unl_maps.append(
+                np.load(os.path.join(path, "unl_maps.npy"), allow_pickle=True)
+            )
+            self.len_maps.append(
+                np.load(os.path.join(path, "len_maps.npy"), allow_pickle=True)
             )
 
         self.npix = self.args[0]["npix"]
@@ -51,32 +64,89 @@ class MapDataset(Dataset):
 
         sample = []
 
-        if self.input_type == "t_map":
-            sample.append(
-                torch.from_numpy(self.maps[map_idx][idx][0][0]).float()[None, :]
-            )
-        elif self.input_type == "tqu_maps":
-            sample.append(
-                torch.from_numpy(np.array(self.maps[map_idx][idx][0])).float()
-            )
-
-        if self.output_type in ["kappa_map", "both"]:
-            sample.append(
-                torch.from_numpy(
-                    self.kappa_maps[map_idx][self.maps[map_idx][idx][-1]][0]
-                ).float()[None, :]
-            )
-        if self.output_type in ["mass", "both"]:
-            sample.append(
-                torch.Tensor(
-                    [self.kappa_maps[map_idx][self.maps[map_idx][idx][-1]][-1]]
-                ).float()[None, None, :]
-                / 500
-            )
+        sample.append(self._get_right_maps(self.input_type, map_idx, idx))
+        sample.append(self._get_right_maps(self.output_type, map_idx, idx))
 
         if self.transform:
             sample[0] = self.transform(sample[0])
 
+        return sample
+
+    def _get_right_maps(self, map_types, map_idx, idx):
+        """Return the right maps based on the content of map_types"""
+
+        sample = []
+        for map_type in map_types:
+            # kappa map and mass
+            print(map_type)
+            if map_type == "kappa_map":
+                sample.append(
+                    torch.from_numpy(
+                        self.kappa_maps[map_idx][self.maps[map_idx][idx][-1]][0]
+                    ).float()[None, :]
+                )
+                continue
+
+            if map_type == "mass":
+                sample.append(
+                    torch.Tensor(
+                        [self.kappa_maps[map_idx][self.maps[map_idx][idx][-1]][-1]]
+                    ).float()[None, None, :]
+                    / 500
+                )
+                continue
+
+            # All TQU maps
+            if map_type.endswith("maps"):
+                if map_type.startswith("obs"):
+                    sample.append(torch.from_numpy(self.maps[map_idx][idx][0]).float())
+                    continue
+                elif map_type.startswith("len"):
+                    sample.append(
+                        torch.from_numpy(self.len_maps[map_idx][idx][0]).float()
+                    )
+                    continue
+                elif map_type.startswith("unl"):
+                    sample.append(
+                        torch.from_numpy(self.unl_maps[map_idx][idx][0]).float()
+                    )
+                    continue
+                elif map_type.startswith("dif"):
+                    sample.append(
+                        torch.from_numpy(
+                            self.len_maps[map_idx][idx][0]
+                            - self.unl_maps[map_idx][idx][0]
+                        ).float()
+                    )
+                    continue
+
+            # Specific map
+            j = list("tqu").index(map_type[3])
+            if map_type.startswith("obs"):
+                sample.append(
+                    torch.from_numpy(self.maps[map_idx][idx][0][j]).float()[None, :]
+                )
+                continue
+            elif map_type.startswith("len"):
+                sample.append(
+                    torch.from_numpy(self.len_maps[map_idx][idx][0][j]).float()[None, :]
+                )
+                continue
+            elif map_type.startswith("unl"):
+                sample.append(
+                    torch.from_numpy(self.unl_maps[map_idx][idx][0][j]).float()[None, :]
+                )
+                continue
+            elif map_type.startswith("dif"):
+                sample.append(
+                    torch.from_numpy(
+                        self.len_maps[map_idx][idx][0][j]
+                        - self.unl_maps[map_idx][idx][0][j]
+                    ).float()[None, :]
+                )
+
+        if len(sample) == 1:
+            return sample[0]
         return sample
 
 

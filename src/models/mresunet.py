@@ -207,6 +207,7 @@ class MResUNet(pl.LightningModule):
         nb_channels_first_box=64,
         output_type="kappa_map",
         loss="mse",
+        final_channels=1,
         **kwargs
     ):
         super(MResUNet, self).__init__()
@@ -258,7 +259,7 @@ class MResUNet(pl.LightningModule):
                 DecodingBox(
                     in_channels=nb_channels_first_box,
                     out_channels=nb_channels_first_box,
-                    final_channels=1,
+                    final_channels=final_channels,
                     kernel_size=3,
                     dropout=0.2,
                 ),
@@ -305,8 +306,8 @@ class MResUNet(pl.LightningModule):
                 d2=d2_list[self.nb_enc_boxes - 2 - i],
             )
 
-        if self.output_type == "kappa_map":
-            x = F.relu(x)
+        # if self.output_type == "kappa_map":
+        # x = F.relu(x)
 
         if self.output_type == "mass":
             x = self.avg(x)

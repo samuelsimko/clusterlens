@@ -37,6 +37,8 @@ def get_cluster_maps(
 
     kappa_maps = []
     maps = []
+    unl_maps = []
+    len_maps = []
     print(kwargs)
 
     for i, M200 in enumerate(tqdm(mass)):
@@ -73,8 +75,26 @@ def get_cluster_maps(
             ]
             for idx in range(nsims)
         ]
+        unl_maps += [
+            [
+                np.array(
+                    [obj.get_unl_map(idx, f).astype(float) for f in ["t", "q", "u"]]
+                ),
+                i,
+            ]
+            for idx in range(nsims)
+        ]
+        len_maps += [
+            [
+                np.array(
+                    [obj.get_len_map(idx, f).astype(float) for f in ["t", "q", "u"]]
+                ),
+                i,
+            ]
+            for idx in range(nsims)
+        ]
 
-    return np.array(maps), np.array(kappa_maps)
+    return np.array(maps), np.array(kappa_maps), np.array(unl_maps), np.array(len_maps)
 
 
 @click.command()
@@ -140,7 +160,7 @@ def get_cluster_maps(
 )
 @click.option("--seed", help="Seed used to generate the maps", default=None, type=int)
 def genmaps(**args):
-    """A program to generate CMB lensed maps."""
+    """A program to generate CMB lensed maps. This also generates the unlensed and lensed CMB maps without noise."""
     if not args["seed"]:
         args["seed"] = random.randint(0, 2**32 - 1)
     print("Seeding everything with seed {}...".format(args["seed"]))
@@ -149,9 +169,11 @@ def genmaps(**args):
     args["destdir"] = os.path.join(os.getcwd(), args["destdir"])
     results = initialize_camb(args["cambinifile"])
     os.environ["LENSIT"] = args["destdir"]
-    maps, kappa_maps = get_cluster_maps(results=results, **args)
+    maps, kappa_maps, unl_maps, len_maps = get_cluster_maps(results=results, **args)
     np.save(os.path.join(args["destdir"], "maps"), maps, allow_pickle=True)
     np.save(os.path.join(args["destdir"], "kappa_maps"), kappa_maps, allow_pickle=True)
+    np.save(os.path.join(args["destdir"], "unl_maps"), unl_maps, allow_pickle=True)
+    np.save(os.path.join(args["destdir"], "len_maps"), len_maps, allow_pickle=True)
     pickle.dump(args, open(os.path.join(args["destdir"], "args"), "wb"))
 
 

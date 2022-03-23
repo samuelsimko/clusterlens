@@ -11,6 +11,7 @@ from torchvision.transforms import transforms
 from mapdatamodule import MapDataModule
 from models.mresunet import MResUNet
 from models.resnet import ResNet
+from models.sam import MSPR, ProgressiveMassEstimation
 
 
 def get_std_mean():
@@ -31,7 +32,7 @@ def main(args):
     seed_everything(args.seed)
 
     checkpoint_name = "_".join(
-        [args.model, args.loss, args.input_type, args.output_type, *args.train_dirs]
+        [args.model, args.loss, *args.input_type, *args.output_type, *args.train_dirs]
     )
 
     checkpoint_callback = ModelCheckpoint(
@@ -48,6 +49,7 @@ def main(args):
     if not args.std_mean:
         # Get mean and std of training datasets
         x_std, x_mean = get_std_mean()
+        # x_std, x_mean = 1, 0
         print("std: {}, mean: {}".format(x_std, x_mean))
     else:
         x_std, x_mean = args.std_mean
@@ -55,27 +57,47 @@ def main(args):
 
     transform = transforms.Compose(
         [
-            transforms.Normalize(mean=x_mean, std=x_std),
-            transforms.Lambda(
-                lambda x: (torch.transpose(x, -2, -1) if torch.rand(1) < 0.5 else x)
-            ),
+            # transforms.Normalize(mean=x_mean, std=x_std),
+            # transforms.Lambda(
+            # lambda x: (torch.transpose(x, -2, -1) if torch.rand(1) < 0.5 else x)
+            # ),
         ]
     )
 
-    dm = MapDataModule(**vars(args), transform=transform)
+    dm = MapDataModule(
+        **vars(args),
+        transform=transform,
+    )
     dm.setup()
 
     if args.model == "mresunet":
         model = MResUNet(
             **vars(args),
-            map_size=dm.npix,
-            input_channels=(3 if dm.input_type == "tqu_maps" else 1)
+            map_size=64,
+            input_channels=(3 if dm.input_type[0].endswith("maps") else 1),
+            final_channels=(3 if dm.output_type[0].endswith("maps") else 1),
+        )
+    elif args.model == "mspr":
+        model = MSPR(
+            **vars(args),
+            map_size=64,
+            input_channels=(3 if dm.input_type[0].endswith("maps") else 1),
+            nb_enc_boxes=3,
+            final_channels=(3 if dm.output_type[0].endswith("maps") else 1),
+        )
+    elif args.model == "pme":
+        model = ProgressiveMassEstimation(
+            **vars(args),
+            map_size=64,
+            input_channels=(3 if "tqu_maps" in dm.input_type else 1),
+            nb_enc_boxes=3,
+            final_channels=1,
         )
     else:
         model = ResNet(
             **vars(args),
-            npix=dm.npix,
-            input_channels=(3 if dm.input_type == "tqu_maps" else 1)
+            npix=64,
+            input_channels=(3 if dm.input_type[0].endswith("maps") else 1),
         )
 
     trainer = Trainer.from_argparse_args(
@@ -91,6 +113,14 @@ if __name__ == "__main__":
     )
     parser = Trainer.add_argparse_args(parser)
 
+    all_comb_maps = [
+        *[
+            i + "_" + j + "_map"
+            for i in ["obs", "len", "unl", "dif"]
+            for j in list("tqu")
+        ],
+        *[i + "_maps" for i in ["obs", "len", "unl", "dif"]],
+    ]
     parser.add_argument(
         "--seed",
         type=int,
@@ -102,7 +132,7 @@ if __name__ == "__main__":
         type=str,
         default="mresunet",
         help="The model to use",
-        choices=["mresunet", "resnet"],
+        choices=["mresunet", "resnet", "mspr", "pme"],
     )
     parser.add_argument(
         "--train_dirs",
@@ -131,13 +161,15 @@ if __name__ == "__main__":
         "--output_type",
         default="kappa_map",
         help="The output of the neural net",
-        choices=["kappa_map", "mass", "both"],
+        nargs="+",
+        choices=["kappa_map", "mass"] + all_comb_maps,
     )
     parser.add_argument(
         "--input_type",
         default="tmap",
         help="The input of the neural net",
-        choices=["t_map", "tqu_maps"],
+        nargs="+",
+        choices=all_comb_maps,
     )
     parser.add_argument(
         "--std_mean",
@@ -145,11 +177,6 @@ if __name__ == "__main__":
         type=float,
         help="The mean and the standard deviation to be used for the input normalization",
         default=None,
-    )
-    parser.add_argument(
-        "--rotate_images",
-        help="Rotate the input images by 90 degrees with a probability of 0.5",
-        action="store_true",
     )
     parser.add_argument(
         "--loss",
