@@ -52,6 +52,11 @@ class MapDataset(Dataset):
         )
         self.len = self.len_cumsum[-1] + 1
 
+        # Get masses
+        self.masses = np.sort(
+            np.unique(np.array([km[:, -1] for km in self.kappa_maps]).flatten())
+        )
+
     def __len__(self):
         return self.len
 
@@ -181,6 +186,7 @@ class MapDataModule(pl.LightningDataModule):
                 input_type=self.input_type,
             )
             self.npix = self.train_dataset.npix
+            self.masses = self.train_dataset.masses
 
         if stage == "val" or stage is None:
             self.val_dataset = MapDataset(
@@ -190,6 +196,7 @@ class MapDataModule(pl.LightningDataModule):
                 input_type=self.input_type,
             )
             self.npix = self.val_dataset.npix
+            self.masses = self.val_dataset.masses
 
     def train_dataloader(self):
         return DataLoader(

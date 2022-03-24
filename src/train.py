@@ -3,6 +3,7 @@ import random
 from argparse import ArgumentParser
 
 import torch
+import torchmetrics
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -45,6 +46,7 @@ def main(args):
     )
 
     logger = TensorBoardLogger(name=checkpoint_name, save_dir="logs")
+    logger.log_hyperparams(vars(args))
 
     if not args.std_mean:
         # Get mean and std of training datasets
@@ -77,6 +79,7 @@ def main(args):
                 map_size=64,
                 input_channels=(3 if dm.input_type[0].endswith("maps") else 1),
                 final_channels=(3 if dm.output_type[0].endswith("maps") else 1),
+                masses=dm.masses
             )
         else:
             model = MResUNet.load_from_checkpoint(

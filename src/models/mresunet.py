@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
+import numpy as np
+import seaborn as sns
+import pandas as pd
+import matplotlib.pyplot as plt
+
 import pytorch_lightning as pl
 import torch
+import torchmetrics
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -208,6 +214,7 @@ class MResUNet(pl.LightningModule):
         output_type="kappa_map",
         loss="mse",
         final_channels=1,
+        masses=None,
         **kwargs
     ):
         super(MResUNet, self).__init__()
@@ -217,6 +224,8 @@ class MResUNet(pl.LightningModule):
         self.input_channels = input_channels
         self.nb_enc_boxes = nb_enc_boxes
         self.nb_channels_first_box = nb_channels_first_box
+        self.masses = masses
+        self.masses_list = masses.tolist()
 
         if loss == "msle":
             self.loss = lambda x, y: F.mse_loss(torch.log(x + 1), torch.log(y + 1))
@@ -331,6 +340,38 @@ class MResUNet(pl.LightningModule):
         y_hat = self(x)
         val_loss = self.loss(y_hat, y)
         self.log("val_loss", val_loss)
+        indexes = np.array([self.masses_list.index(yi) for yi in y], dtype=int)
+        guesses = np.array(
+            [self.masses[(np.abs(yi.item() - self.masses)).argmin()] for yi in y_hat],
+            dtype=int,
+        )
+        return {"val_loss": val_loss, "y": indexes, "y_hat": guesses}
+
+    def validation_epoch_end(self, outputs):
+        if "mass" in self.output_type:
+            preds = torch.Tensor(
+                np.array([tmp["y_hat"] for tmp in outputs]).flatten()
+            ).int()
+            targets = torch.Tensor(
+                np.array([tmp["y"] for tmp in outputs]).flatten()
+            ).int()
+            num_classes = len(self.masses)
+
+            confusion_matrix = torchmetrics.ConfusionMatrix(num_classes=num_classes)(
+                preds, targets
+            )
+            df_cm = pd.DataFrame(
+                confusion_matrix.numpy(),
+                index=range(num_classes),
+                columns=range(num_classes),
+            )
+            plt.figure(figsize=(10, 7))
+            fig_ = sns.heatmap(df_cm, annot=True, cmap="Spectral").get_figure()
+            plt.close(fig_)
+
+            self.logger.experiment.add_figure(
+                "Confusion matrix", fig_, self.current_epoch
+            )
 
     def predict_step(self, batch, batch_idx):
         x, y = batch
