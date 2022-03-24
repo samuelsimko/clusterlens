@@ -71,12 +71,20 @@ def main(args):
     dm.setup()
 
     if args.model == "mresunet":
-        model = MResUNet(
-            **vars(args),
-            map_size=64,
-            input_channels=(3 if dm.input_type[0].endswith("maps") else 1),
-            final_channels=(3 if dm.output_type[0].endswith("maps") else 1),
-        )
+        if not args.checkpoint:
+            model = MResUNet(
+                **vars(args),
+                map_size=64,
+                input_channels=(3 if dm.input_type[0].endswith("maps") else 1),
+                final_channels=(3 if dm.output_type[0].endswith("maps") else 1),
+            )
+        else:
+            model = MResUNet.load_from_checkpoint(
+                checkpoint_path=args.checkpoint ** vars(args),
+                map_size=64,
+                input_channels=(3 if dm.input_type[0].endswith("maps") else 1),
+                final_channels=(3 if dm.output_type[0].endswith("maps") else 1),
+            )
     elif args.model == "mspr":
         model = MSPR(
             **vars(args),
@@ -183,6 +191,11 @@ if __name__ == "__main__":
         help="The loss function to be used for the neural net",
         choices=["mse", "msle"],
         default="mse",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        help="The checkpoint of a previously trained neural net",
+        default=None,
     )
 
     temp_args, _ = parser.parse_known_args()

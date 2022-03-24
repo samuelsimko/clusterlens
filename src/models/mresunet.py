@@ -274,7 +274,7 @@ class MResUNet(pl.LightningModule):
             padding=1,
         )
 
-        if self.output_type == "mass":
+        if self.output_type == ["mass"]:
             self.avg = nn.AvgPool2d(map_size)
 
     @staticmethod
@@ -309,7 +309,7 @@ class MResUNet(pl.LightningModule):
         # if self.output_type == "kappa_map":
         # x = F.relu(x)
 
-        if self.output_type == "mass":
+        if self.output_type == ["mass"]:
             x = self.avg(x)
 
         return x

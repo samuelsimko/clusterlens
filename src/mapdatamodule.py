@@ -78,7 +78,6 @@ class MapDataset(Dataset):
         sample = []
         for map_type in map_types:
             # kappa map and mass
-            print(map_type)
             if map_type == "kappa_map":
                 sample.append(
                     torch.from_numpy(
@@ -92,7 +91,7 @@ class MapDataset(Dataset):
                     torch.Tensor(
                         [self.kappa_maps[map_idx][self.maps[map_idx][idx][-1]][-1]]
                     ).float()[None, None, :]
-                    / 500
+                    # / 500
                 )
                 continue
 
@@ -121,7 +120,7 @@ class MapDataset(Dataset):
                     continue
 
             # Specific map
-            j = list("tqu").index(map_type[3])
+            j = list("tqu").index(map_type[4])
             if map_type.startswith("obs"):
                 sample.append(
                     torch.from_numpy(self.maps[map_idx][idx][0][j]).float()[None, :]
