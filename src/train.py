@@ -50,8 +50,8 @@ def main(args):
 
     if not args.std_mean:
         # Get mean and std of training datasets
-        x_std, x_mean = get_std_mean()
-        # x_std, x_mean = 1, 0
+        # x_std, x_mean = get_std_mean()
+        x_std, x_mean = 1, 0
         print("std: {}, mean: {}".format(x_std, x_mean))
     else:
         x_std, x_mean = args.std_mean
@@ -73,13 +73,13 @@ def main(args):
     dm.setup()
 
     if args.model == "mresunet":
-        if not args.checkpoint:
+        if not args.checkpoint_path:
             model = MResUNet(
                 **vars(args),
                 map_size=64,
                 input_channels=(3 if dm.input_type[0].endswith("maps") else 1),
                 final_channels=(3 if dm.output_type[0].endswith("maps") else 1),
-                masses=dm.masses
+                masses=dm.masses,
             )
         else:
             model = MResUNet.load_from_checkpoint(
@@ -87,6 +87,7 @@ def main(args):
                 map_size=64,
                 input_channels=(3 if dm.input_type[0].endswith("maps") else 1),
                 final_channels=(3 if dm.output_type[0].endswith("maps") else 1),
+                masses=dm.masses,
             )
     elif args.model == "mspr":
         model = MSPR(
@@ -196,7 +197,7 @@ if __name__ == "__main__":
         default="mse",
     )
     parser.add_argument(
-        "--checkpoint",
+        "--checkpoint_path",
         help="The checkpoint of a previously trained neural net",
         default=None,
     )

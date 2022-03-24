@@ -98,7 +98,7 @@ def get_cluster_maps(
 
 
 @click.command()
-@click.argument("mass", nargs=-1, type=int)
+@click.argument("mass", nargs=-1, type=float)
 @click.argument("destdir", nargs=1, type=click.Path(exists=False))
 @click.option(
     "--nsims", help="Number of simulations for each mass", required=True, type=int

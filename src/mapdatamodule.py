@@ -56,6 +56,7 @@ class MapDataset(Dataset):
         self.masses = np.sort(
             np.unique(np.array([km[:, -1] for km in self.kappa_maps]).flatten())
         )
+        self.masses = self.masses / 500
 
     def __len__(self):
         return self.len
@@ -96,7 +97,7 @@ class MapDataset(Dataset):
                     torch.Tensor(
                         [self.kappa_maps[map_idx][self.maps[map_idx][idx][-1]][-1]]
                     ).float()[None, None, :]
-                    # / 500
+                    / 500
                 )
                 continue
 

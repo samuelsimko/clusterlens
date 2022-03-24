@@ -320,6 +320,7 @@ class MResUNet(pl.LightningModule):
 
         if self.output_type == ["mass"]:
             x = self.avg(x)
+            x = F.relu(x)
 
         return x
 
@@ -340,21 +341,26 @@ class MResUNet(pl.LightningModule):
         y_hat = self(x)
         val_loss = self.loss(y_hat, y)
         self.log("val_loss", val_loss)
-        indexes = np.array([self.masses_list.index(yi) for yi in y], dtype=int)
-        guesses = np.array(
-            [self.masses[(np.abs(yi.item() - self.masses)).argmin()] for yi in y_hat],
-            dtype=int,
-        )
-        return {"val_loss": val_loss, "y": indexes, "y_hat": guesses}
+        if "mass" in self.output_type:
+            indexes = np.array(
+                [self.masses[(np.abs(yi.item() - self.masses)).argmin()] for yi in y],
+                dtype=int,
+            )
+            guesses = np.array(
+                [
+                    self.masses[(np.abs(yi.item() - self.masses)).argmin()]
+                    for yi in y_hat
+                ],
+                dtype=int,
+            )
+            return {"val_loss": val_loss, "y": indexes, "y_hat": guesses}
 
     def validation_epoch_end(self, outputs):
         if "mass" in self.output_type:
             preds = torch.Tensor(
-                np.array([tmp["y_hat"] for tmp in outputs]).flatten()
+                np.concatenate([tmp["y_hat"] for tmp in outputs])
             ).int()
-            targets = torch.Tensor(
-                np.array([tmp["y"] for tmp in outputs]).flatten()
-            ).int()
+            targets = torch.Tensor(np.concatenate([tmp["y"] for tmp in outputs])).int()
             num_classes = len(self.masses)
 
             confusion_matrix = torchmetrics.ConfusionMatrix(num_classes=num_classes)(
