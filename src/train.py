@@ -83,7 +83,7 @@ def main(args):
             )
         else:
             model = MResUNet.load_from_checkpoint(
-                checkpoint_path=args.checkpoint ** vars(args),
+                **vars(args),
                 map_size=64,
                 input_channels=(3 if dm.input_type[0].endswith("maps") else 1),
                 final_channels=(3 if dm.output_type[0].endswith("maps") else 1),

@@ -225,7 +225,6 @@ class MResUNet(pl.LightningModule):
         self.nb_enc_boxes = nb_enc_boxes
         self.nb_channels_first_box = nb_channels_first_box
         self.masses = masses
-        self.masses_list = masses.tolist()
 
         if loss == "msle":
             self.loss = lambda x, y: F.mse_loss(torch.log(x + 1), torch.log(y + 1))
@@ -343,15 +342,10 @@ class MResUNet(pl.LightningModule):
         self.log("val_loss", val_loss)
         if "mass" in self.output_type:
             indexes = np.array(
-                [self.masses[(np.abs(yi.item() - self.masses)).argmin()] for yi in y],
-                dtype=int,
+                [(np.abs(yi.item() - self.masses)).argmin() for yi in y],
             )
             guesses = np.array(
-                [
-                    self.masses[(np.abs(yi.item() - self.masses)).argmin()]
-                    for yi in y_hat
-                ],
-                dtype=int,
+                [(np.abs(yi.item() - self.masses)).argmin() for yi in y_hat],
             )
             return {"val_loss": val_loss, "y": indexes, "y_hat": guesses}
 
