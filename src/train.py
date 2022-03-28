@@ -45,7 +45,7 @@ def main(args):
         # save_last=True,
     )
 
-    logger = TensorBoardLogger(name=checkpoint_name, save_dir="logs")
+    logger = TensorBoardLogger(name=checkpoint_name, save_dir="logs_test")
     logger.log_hyperparams(vars(args))
 
     if not args.std_mean:
@@ -76,7 +76,7 @@ def main(args):
         if not args.checkpoint_path:
             model = MResUNet(
                 **vars(args),
-                map_size=64,
+                map_size=(dm.npix if args.crop is None else args.crop),
                 input_channels=(3 if dm.input_type[0].endswith("maps") else 1),
                 final_channels=(3 if dm.output_type[0].endswith("maps") else 1),
                 masses=dm.masses,
@@ -84,7 +84,7 @@ def main(args):
         else:
             model = MResUNet.load_from_checkpoint(
                 **vars(args),
-                map_size=64,
+                map_size=(dm.npix if args.crop is None else args.crop),
                 input_channels=(3 if dm.input_type[0].endswith("maps") else 1),
                 final_channels=(3 if dm.output_type[0].endswith("maps") else 1),
                 masses=dm.masses,
@@ -92,7 +92,7 @@ def main(args):
     elif args.model == "mspr":
         model = MSPR(
             **vars(args),
-            map_size=64,
+            map_size=(dm.npix if args.crop is None else args.crop),
             input_channels=(3 if dm.input_type[0].endswith("maps") else 1),
             nb_enc_boxes=3,
             final_channels=(3 if dm.output_type[0].endswith("maps") else 1),
@@ -100,7 +100,7 @@ def main(args):
     elif args.model == "pme":
         model = ProgressiveMassEstimation(
             **vars(args),
-            map_size=64,
+            map_size=(dm.npix if args.crop is None else args.crop),
             input_channels=(3 if "tqu_maps" in dm.input_type else 1),
             nb_enc_boxes=3,
             final_channels=1,
@@ -108,7 +108,7 @@ def main(args):
     else:
         model = ResNet(
             **vars(args),
-            npix=64,
+            npix=(dm.npix if args.crop is None else args.crop),
             input_channels=(3 if dm.input_type[0].endswith("maps") else 1),
         )
 
@@ -199,6 +199,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--checkpoint_path",
         help="The checkpoint of a previously trained neural net",
+        default=None,
+    )
+    parser.add_argument(
+        "--crop",
+        help="The area to crop randomly",
+        type=int,
         default=None,
     )
 

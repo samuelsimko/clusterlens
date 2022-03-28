@@ -18,12 +18,14 @@ class MapDataset(Dataset):
         transform=None,
         output_type="kappa_map",
         input_type="tmap",
+        crop=None,
     ):
         super().__init__()
 
         self.transform = transform
         self.output_type = output_type
         self.input_type = input_type
+        self.crop = crop
 
         self.args = []
         self.maps = []
@@ -73,10 +75,30 @@ class MapDataset(Dataset):
         sample.append(self._get_right_maps(self.input_type, map_idx, idx))
         sample.append(self._get_right_maps(self.output_type, map_idx, idx))
 
+        if self.crop is not None:
+            # Crop randomly
+            sample = self._crop(sample[0], sample[1], npix=self.npix, crop=self.crop)
+
         if self.transform:
             sample[0] = self.transform(sample[0])
 
         return sample
+
+    def _crop(self, *samples, npix, crop):
+        """Randomly crops sample to a `crop` x `crop` image for every sample of size `npix` x `npix`"""
+        x, y = random.randint(0, npix - crop), random.randint(0, npix - crop)
+        samples = list(samples)
+        for i in range(len(samples)):
+            if isinstance(samples[i], list):
+                for s in samples[i]:
+                    if s.shape[-1] < 2:
+                        continue
+                    s = s[:, x : crop + x, y : crop + y]
+            else:
+                if samples[i].shape[-1] < 2:
+                    continue
+                samples[i] = samples[i][:, x : crop + x, y : crop + y]
+        return list(samples)
 
     def _get_right_maps(self, map_types, map_idx, idx):
         """Return the right maps based on the content of map_types"""
@@ -167,6 +189,7 @@ class MapDataModule(pl.LightningDataModule):
         num_workers,
         output_type,
         input_type,
+        crop=None,
         **args
     ):
         super().__init__()
@@ -177,6 +200,7 @@ class MapDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.output_type = output_type
         self.input_type = input_type
+        self.crop = crop
 
     def setup(self, stage=None):
         if stage == "fit" or stage is None:
@@ -185,6 +209,7 @@ class MapDataModule(pl.LightningDataModule):
                 self.transform,
                 self.output_type,
                 input_type=self.input_type,
+                crop=self.crop,
             )
             self.npix = self.train_dataset.npix
             self.masses = self.train_dataset.masses
@@ -195,6 +220,7 @@ class MapDataModule(pl.LightningDataModule):
                 self.transform,
                 self.output_type,
                 input_type=self.input_type,
+                crop=self.crop,
             )
             self.npix = self.val_dataset.npix
             self.masses = self.val_dataset.masses

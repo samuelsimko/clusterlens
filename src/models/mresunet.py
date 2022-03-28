@@ -215,7 +215,7 @@ class MResUNet(pl.LightningModule):
         loss="mse",
         final_channels=1,
         masses=None,
-        **kwargs
+        **kwargs,
     ):
         super(MResUNet, self).__init__()
 
@@ -227,7 +227,9 @@ class MResUNet(pl.LightningModule):
         self.masses = masses
 
         if loss == "msle":
-            self.loss = lambda x, y: F.mse_loss(torch.log(x + 1), torch.log(y + 1))
+            self.loss = lambda x, y: F.mse_loss(
+                torch.log(x + 1e-14), torch.log(y + 1e-14)
+            )
         else:
             self.loss = F.mse_loss
 
@@ -314,12 +316,10 @@ class MResUNet(pl.LightningModule):
                 d2=d2_list[self.nb_enc_boxes - 2 - i],
             )
 
-        # if self.output_type == "kappa_map":
-        # x = F.relu(x)
-
         if self.output_type == ["mass"]:
             x = self.avg(x)
-            x = F.relu(x)
+
+        x = F.relu(x)
 
         return x
 
@@ -340,26 +340,44 @@ class MResUNet(pl.LightningModule):
         y_hat = self(x)
         val_loss = self.loss(y_hat, y)
         self.log("val_loss", val_loss)
+
         if "mass" in self.output_type:
+            """Return statistics to plot graphs"""
             indexes = np.array(
                 [(np.abs(yi.item() - self.masses)).argmin() for yi in y],
             )
             guesses = np.array(
                 [(np.abs(yi.item() - self.masses)).argmin() for yi in y_hat],
             )
-            return {"val_loss": val_loss, "y": indexes, "y_hat": guesses}
+            return {
+                "val_loss": val_loss,
+                "y": y,
+                "y_hat": y_hat,
+                "y_i": indexes,
+                "y_hat_i": guesses,
+            }
 
     def validation_epoch_end(self, outputs):
+        """Plot graphs to writer at the end of each validation epoch"""
+
         if "mass" in self.output_type:
-            preds = torch.Tensor(
-                np.concatenate([tmp["y_hat"] for tmp in outputs])
+            preds_i = torch.Tensor(
+                np.concatenate([tmp["y_hat_i"] for tmp in outputs])
             ).int()
-            targets = torch.Tensor(np.concatenate([tmp["y"] for tmp in outputs])).int()
+            targets_i = torch.Tensor(
+                np.concatenate([tmp["y_i"] for tmp in outputs])
+            ).int()
+
+            preds = torch.Tensor(np.concatenate([tmp["y_hat"] for tmp in outputs]))
+            targets = torch.Tensor(np.concatenate([tmp["y"] for tmp in outputs]))
+
             num_classes = len(self.masses)
 
-            confusion_matrix = torchmetrics.ConfusionMatrix(num_classes=num_classes)(
-                preds, targets
-            )
+            # Plot confusion matrix
+            confusion_matrix = torchmetrics.ConfusionMatrix(
+                num_classes=num_classes, normalize="true"
+            )(preds_i, targets_i)
+
             df_cm = pd.DataFrame(
                 confusion_matrix.numpy(),
                 index=range(num_classes),
@@ -371,6 +389,27 @@ class MResUNet(pl.LightningModule):
 
             self.logger.experiment.add_figure(
                 "Confusion matrix", fig_, self.current_epoch
+            )
+
+            # Plot errorbars of predictions
+            pred_std_mean = []
+            for i in sorted(np.unique(targets_i)):
+                tmp = preds[(targets_i == i)]
+                pred_std_mean.append(torch.std_mean(tmp))
+            pred_std_mean = np.array(pred_std_mean)
+
+            fig = plt.figure()
+            subplot1 = fig.add_subplot(1, 1, 1)
+            subplot1.errorbar(
+                x=range(len(pred_std_mean[:, 0])),
+                y=pred_std_mean[:, 0],
+                yerr=pred_std_mean[:, 1],
+                linestyle="None",
+                marker="^",
+            )
+
+            self.logger.experiment.add_figure(
+                "Prediction plot", fig, self.current_epoch
             )
 
     def predict_step(self, batch, batch_idx):
