@@ -424,7 +424,6 @@ class MResUNet(pl.LightningModule):
 
             # Show table of statistics of prediction
             pred_std_mean = []
-            print(targets)
             for i in sorted(np.unique(targets)):
                 tmp = preds[(targets == i)]
                 pred_std_mean.append(torch.std_mean(tmp))
