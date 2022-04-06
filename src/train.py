@@ -14,6 +14,8 @@ from models.mresunet import MResUNet
 from models.resnet import ResNet
 from models.sam import MSPR, ProgressiveMassEstimation
 
+from massplotter import MassPlotter
+
 
 def get_std_mean():
     """Return the std and the mean of the training dataset features"""
@@ -53,13 +55,12 @@ def main(args):
     logger = TensorBoardLogger(name=checkpoint_name, save_dir="logs_test")
     logger.log_hyperparams(vars(args))
 
-    if not args.std_mean:
+    if not args.std or not args.mean:
         # Get mean and std of training datasets
-        # x_std, x_mean = get_std_mean()
-        x_std, x_mean = 1, 0
+        x_std, x_mean = get_std_mean()
         print("std: {}, mean: {}".format(x_std, x_mean))
     else:
-        x_std, x_mean = args.std_mean
+        x_std, x_mean = args.std, args.mean
         print("std: {}, mean: {}".format(x_std, x_mean))
 
     transform = transforms.Compose(
@@ -77,6 +78,8 @@ def main(args):
     )
     dm.setup()
 
+    mass_plotter = MassPlotter(logger, dm.masses_mean, dm.masses_std)
+
     if args.model == "mresunet":
         if not args.checkpoint_path:
             model = MResUNet(
@@ -85,6 +88,7 @@ def main(args):
                 input_channels=get_num_channels(dm.input_type),
                 final_channels=get_num_channels(dm.output_type),
                 masses=dm.masses,
+                mass_plotter=mass_plotter,
             )
         else:
             model = MResUNet.load_from_checkpoint(
@@ -93,6 +97,7 @@ def main(args):
                 input_channels=get_num_channels(dm.input_type),
                 final_channels=get_num_channels(dm.output_type),
                 masses=dm.masses,
+                mass_plotter=mass_plotter,
             )
     elif args.model == "mspr":
         model = MSPR(
@@ -191,11 +196,17 @@ if __name__ == "__main__":
         choices=all_comb_maps,
     )
     parser.add_argument(
-        "--std_mean",
-        nargs=2,
+        "--std",
+        nargs="+",
         type=float,
-        help="The mean and the standard deviation to be used for the input normalization",
+        help="The standard deviation to be used for the input normalization",
         default=None,
+    )
+    parser.add_argument(
+        "--mean",
+        nargs="+",
+        type=float,
+        help="The mean to be used for the input normalization",
     )
     parser.add_argument(
         "--loss",

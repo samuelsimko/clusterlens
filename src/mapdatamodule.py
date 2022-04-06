@@ -60,6 +60,7 @@ class MapDataset(Dataset):
             np.unique(np.array([km[:, -1] for km in self.kappa_maps]).flatten())
         ).astype(float)
         self.masses = np.log(self.masses / 500)
+        print(self.masses)
         self.masses_std, self.masses_mean = np.std(self.masses), np.mean(self.masses)
         self.mass_normalize = Normalize(self.masses_mean, self.masses_std)
 
@@ -227,6 +228,8 @@ class MapDataModule(pl.LightningDataModule):
             )
             self.npix = self.train_dataset.npix
             self.masses = self.train_dataset.masses
+            self.masses_mean = self.train_dataset.masses_mean
+            self.masses_std = self.train_dataset.masses_std
 
         if stage == "val" or stage is None:
             self.val_dataset = MapDataset(

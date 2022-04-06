@@ -216,6 +216,7 @@ class MResUNet(pl.LightningModule):
         final_channels=1,
         masses=None,
         final_relu=False,
+        mass_plotter=None,
         **kwargs,
     ):
         super(MResUNet, self).__init__()
@@ -227,6 +228,7 @@ class MResUNet(pl.LightningModule):
         self.nb_channels_first_box = nb_channels_first_box
         self.masses = masses
         self.final_relu = final_relu
+        self.mass_plotter = mass_plotter
 
         if loss == "msle":
             self.loss = lambda x, y: F.mse_loss(
@@ -371,90 +373,19 @@ class MResUNet(pl.LightningModule):
         self.log("val_loss", val_loss)
 
         if "mass" in self.output_type:
-            # Return statistics to plot graphs
-            indexes = np.array(
-                [(np.abs(yi.item() - self.masses)).argmin() for yi in y],
-            )
-            guesses = np.array(
-                [(np.abs(yi.item() - self.masses)).argmin() for yi in y_hat],
-            )
+            # Return values to plot graphs
             return {
                 "val_loss": val_loss,
-                "y": y,
-                "y_hat": y_hat,
-                "y_i": indexes,
-                "y_hat_i": guesses,
+                "y": y.cpu().numpy(),
+                "y_hat": y_hat.cpu().numpy(),
             }
 
     def validation_epoch_end(self, outputs):
         """Plot graphs to writer at the end of each validation epoch"""
 
-        if "mass" in self.output_type:
-            preds_i = torch.Tensor(
-                np.concatenate([tmp["y_hat_i"] for tmp in outputs])
-            ).int()
-            targets_i = torch.Tensor(
-                np.concatenate([tmp["y_i"] for tmp in outputs])
-            ).int()
+        if "mass" in self.output_type and self.mass_plotter is not None:
 
-            preds = torch.Tensor(np.concatenate([tmp["y_hat"] for tmp in outputs]))
-            targets = torch.Tensor(np.concatenate([tmp["y"] for tmp in outputs]))
-
-            num_classes = len(self.masses)
-
-            # Plot confusion matrix
-            confusion_matrix = torchmetrics.ConfusionMatrix(
-                num_classes=num_classes, normalize="true"
-            )(preds_i, targets_i)
-
-            df_cm = pd.DataFrame(
-                confusion_matrix.numpy(),
-                index=range(num_classes),
-                columns=range(num_classes),
-            )
-            plt.figure(figsize=(10, 7))
-            fig_ = sns.heatmap(df_cm, annot=True, cmap="Spectral").get_figure()
-            plt.close(fig_)
-
-            plt.plot()
-
-            self.logger.experiment.add_figure(
-                "Confusion matrix", fig_, self.current_epoch
-            )
-
-            # Show table of statistics of prediction
-            pred_std_mean = []
-            for i in sorted(np.unique(targets)):
-                tmp = preds[(targets == i)]
-                pred_std_mean.append(torch.std_mean(tmp))
-            pred_std_mean = np.array(pred_std_mean)
-
-            fig, axs = plt.subplots(1, 1)
-            axs.axis("off")
-            axs.table(
-                cellText=np.array(pred_std_mean),
-                rowLabels=sorted(np.unique(targets)),
-                colLabels=["std", "mean"],
-                loc="center",
-            )
-            plt.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
-
-            self.logger.experiment.add_figure(
-                "Prediction table", fig, self.current_epoch
-            )
-
-            fig, axs = plt.subplots(1, 1)
-            axs.errorbar(
-                x=sorted(np.unique(targets)),
-                y=np.nan_to_num(pred_std_mean[:, 1], nan=0),
-                yerr=np.nan_to_num(pred_std_mean[:, 0], nan=0),
-                linestyle="None",
-                marker="^",
-            )
-
-            self.logger.experiment.add_figure(
-                "Prediction plot", fig, self.current_epoch
-            )
+            self.mass_plotter.plot_all(outputs, self.current_epoch)
 
     def predict_step(self, batch, batch_idx):
         x, y = batch
