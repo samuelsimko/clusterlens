@@ -33,7 +33,6 @@ class MassPlotter:
 
         # Show table of statistics of prediction
         pred_std_mean = []
-        print(y_hat.cpu().numpy())
         for i in sorted(np.unique(y)):
             tmp = y_hat[(y == i)]
             pred_std_mean.append(torch.std_mean(tmp))
@@ -68,7 +67,7 @@ class MassPlotter:
         )
         axs.legend()
         axs.set_yscale("log")
-        axs.set_yscale("log")
+        axs.set_xscale("log")
         plt.xlabel("Real mass")
         plt.ylabel("Predicted mass")
         plt.title("Predictions for validation set, epoch {}".format(current_epoch))
