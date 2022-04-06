@@ -215,6 +215,7 @@ class MResUNet(pl.LightningModule):
         loss="mse",
         final_channels=1,
         masses=None,
+        final_relu=False,
         **kwargs,
     ):
         super(MResUNet, self).__init__()
@@ -225,6 +226,7 @@ class MResUNet(pl.LightningModule):
         self.nb_enc_boxes = nb_enc_boxes
         self.nb_channels_first_box = nb_channels_first_box
         self.masses = masses
+        self.final_relu = final_relu
 
         if loss == "msle":
             self.loss = lambda x, y: F.mse_loss(
@@ -284,8 +286,14 @@ class MResUNet(pl.LightningModule):
             padding=1,
         )
 
-        if self.output_type == ["mass"]:
+        if ["mass"] == self.output_type:
+            # self.fc = torch.nn.Linear(in_features=(final_channels-1)*64*64, out_features=(final_channels-1)*64*64)
             self.avg = nn.AvgPool2d(map_size)
+            self.fc_mass = torch.nn.Linear(
+                in_features=final_channels * 64 * 64, out_features=1
+            )
+        # else:
+        # self.fc = torch.nn.Linear(in_features=final_channels*64*64, out_features=final_channels*64*64)
 
     @staticmethod
     def add_model_specific_args(parent_parser):
@@ -316,10 +324,15 @@ class MResUNet(pl.LightningModule):
                 d2=d2_list[self.nb_enc_boxes - 2 - i],
             )
 
-        if self.output_type == ["mass"]:
-            x = self.avg(x)
+        if ["mass"] == self.output_type:
+            mass = self.fc_mass(x.view(x.shape[0], -1)).view((x.shape[0], 1, 1, 1))
+            return mass
 
-        x = F.relu(x)
+        # Final linear layer
+        # x = self.fc(x.view(x.shape[0], -1)).view(x.shape)
+
+        if self.final_relu:
+            x = F.relu(x)
 
         return x
 
@@ -330,6 +343,21 @@ class MResUNet(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x, y = batch
+
+        """
+        if "mass" in self.output_type:
+            # Put mass to front
+            y.insert(0, y.pop(self.output_type.index("mass")))
+            y_hat, mass = self(x)
+            loss = self.loss(y_hat, y[1:])
+            mass_loss = self.loss(mass, y[0])
+            train_loss = (mass_loss + loss)/2
+            self.log("train_loss", train_loss)
+            self.log("map_train_loss", loss)
+            self.log("mass_train_loss", mass_loss)
+            return train_loss
+        """
+
         y_hat = self(x)
         loss = self.loss(y_hat, y)
         self.log("train_loss", loss)
@@ -337,12 +365,13 @@ class MResUNet(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
+
         y_hat = self(x)
         val_loss = self.loss(y_hat, y)
         self.log("val_loss", val_loss)
 
         if "mass" in self.output_type:
-            """Return statistics to plot graphs"""
+            # Return statistics to plot graphs
             indexes = np.array(
                 [(np.abs(yi.item() - self.masses)).argmin() for yi in y],
             )
@@ -387,23 +416,39 @@ class MResUNet(pl.LightningModule):
             fig_ = sns.heatmap(df_cm, annot=True, cmap="Spectral").get_figure()
             plt.close(fig_)
 
+            plt.plot()
+
             self.logger.experiment.add_figure(
                 "Confusion matrix", fig_, self.current_epoch
             )
 
-            # Plot errorbars of predictions
+            # Show table of statistics of prediction
             pred_std_mean = []
-            for i in sorted(np.unique(targets_i)):
-                tmp = preds[(targets_i == i)]
+            print(targets)
+            for i in sorted(np.unique(targets)):
+                tmp = preds[(targets == i)]
                 pred_std_mean.append(torch.std_mean(tmp))
             pred_std_mean = np.array(pred_std_mean)
 
-            fig = plt.figure()
-            subplot1 = fig.add_subplot(1, 1, 1)
-            subplot1.errorbar(
-                x=range(len(pred_std_mean[:, 0])),
-                y=pred_std_mean[:, 0],
-                yerr=pred_std_mean[:, 1],
+            fig, axs = plt.subplots(1, 1)
+            axs.axis("off")
+            axs.table(
+                cellText=np.array(pred_std_mean),
+                rowLabels=sorted(np.unique(targets)),
+                colLabels=["std", "mean"],
+                loc="center",
+            )
+            plt.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
+
+            self.logger.experiment.add_figure(
+                "Prediction table", fig, self.current_epoch
+            )
+
+            fig, axs = plt.subplots(1, 1)
+            axs.errorbar(
+                x=sorted(np.unique(targets)),
+                y=np.nan_to_num(pred_std_mean[:, 1], nan=0),
+                yerr=np.nan_to_num(pred_std_mean[:, 0], nan=0),
                 linestyle="None",
                 marker="^",
             )

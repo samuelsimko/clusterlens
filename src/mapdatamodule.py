@@ -6,6 +6,7 @@ import random
 import numpy as np
 import pytorch_lightning as pl
 import torch
+from torchvision.transforms import Normalize
 from torch.utils.data import DataLoader, Dataset
 
 
@@ -57,8 +58,10 @@ class MapDataset(Dataset):
         # Get masses
         self.masses = np.sort(
             np.unique(np.array([km[:, -1] for km in self.kappa_maps]).flatten())
-        )
-        self.masses = self.masses / 500
+        ).astype(float)
+        self.masses = np.log(self.masses / 500)
+        self.masses_std, self.masses_mean = np.std(self.masses), np.mean(self.masses)
+        self.mass_normalize = Normalize(self.masses_mean, self.masses_std)
 
     def __len__(self):
         return self.len
@@ -81,12 +84,14 @@ class MapDataset(Dataset):
 
         if self.transform:
             sample[0] = self.transform(sample[0])
+            # sample[1] = self.transform(sample[1])
 
         return sample
 
     def _crop(self, *samples, npix, crop):
         """Randomly crops sample to a `crop` x `crop` image for every sample of size `npix` x `npix`"""
-        x, y = random.randint(0, npix - crop), random.randint(0, npix - crop)
+        # x, y = random.randint(0, npix - crop), random.randint(0, npix - crop)
+        x, y = (npix - crop) // 2, (npix - crop) // 2
         samples = list(samples)
         for i in range(len(samples)):
             if isinstance(samples[i], list):
@@ -115,11 +120,20 @@ class MapDataset(Dataset):
                 continue
 
             if map_type == "mass":
+                # Standardize maps
                 sample.append(
-                    torch.Tensor(
-                        [self.kappa_maps[map_idx][self.maps[map_idx][idx][-1]][-1]]
-                    ).float()[None, None, :]
-                    / 500
+                    self.mass_normalize(
+                        torch.log(
+                            torch.Tensor(
+                                [
+                                    self.kappa_maps[map_idx][
+                                        self.maps[map_idx][idx][-1]
+                                    ][-1]
+                                ]
+                            ).float()[None, None, :]
+                            / 500
+                        )
+                    )
                 )
                 continue
 

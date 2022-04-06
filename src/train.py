@@ -5,7 +5,7 @@ from argparse import ArgumentParser
 import torch
 import torchmetrics
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint, StochasticWeightAveraging
 from pytorch_lightning.loggers import TensorBoardLogger
 from torchvision.transforms import transforms
 
@@ -23,6 +23,11 @@ def get_std_mean():
     dl = dm.train_dataloader()
     x, _ = next(iter(dl))
     return torch.std_mean(x, [0, 2, 3])
+
+
+def get_num_channels(input_type):
+    """Return the number of channels from the input/output type"""
+    return sum([3 if x.endswith("maps") else 1 for x in input_type])
 
 
 def main(args):
@@ -59,7 +64,7 @@ def main(args):
 
     transform = transforms.Compose(
         [
-            # transforms.Normalize(mean=x_mean, std=x_std),
+            transforms.Normalize(mean=x_mean, std=x_std),
             # transforms.Lambda(
             # lambda x: (torch.transpose(x, -2, -1) if torch.rand(1) < 0.5 else x)
             # ),
@@ -77,31 +82,31 @@ def main(args):
             model = MResUNet(
                 **vars(args),
                 map_size=(dm.npix if args.crop is None else args.crop),
-                input_channels=(3 if dm.input_type[0].endswith("maps") else 1),
-                final_channels=(3 if dm.output_type[0].endswith("maps") else 1),
+                input_channels=get_num_channels(dm.input_type),
+                final_channels=get_num_channels(dm.output_type),
                 masses=dm.masses,
             )
         else:
             model = MResUNet.load_from_checkpoint(
                 **vars(args),
                 map_size=(dm.npix if args.crop is None else args.crop),
-                input_channels=(3 if dm.input_type[0].endswith("maps") else 1),
-                final_channels=(3 if dm.output_type[0].endswith("maps") else 1),
+                input_channels=get_num_channels(dm.input_type),
+                final_channels=get_num_channels(dm.output_type),
                 masses=dm.masses,
             )
     elif args.model == "mspr":
         model = MSPR(
             **vars(args),
             map_size=(dm.npix if args.crop is None else args.crop),
-            input_channels=(3 if dm.input_type[0].endswith("maps") else 1),
+            input_channels=get_num_channels(dm.input_type),
             nb_enc_boxes=3,
-            final_channels=(3 if dm.output_type[0].endswith("maps") else 1),
+            final_channels=get_num_channels(dm.output_type),
         )
     elif args.model == "pme":
         model = ProgressiveMassEstimation(
             **vars(args),
             map_size=(dm.npix if args.crop is None else args.crop),
-            input_channels=(3 if "tqu_maps" in dm.input_type else 1),
+            input_channels=get_num_channels(dm.input_type),
             nb_enc_boxes=3,
             final_channels=1,
         )
@@ -109,8 +114,10 @@ def main(args):
         model = ResNet(
             **vars(args),
             npix=(dm.npix if args.crop is None else args.crop),
-            input_channels=(3 if dm.input_type[0].endswith("maps") else 1),
+            input_channels=get_num_channels(dm.input_type),
         )
+
+    # swa = StochasticWeightAveraging(swa_epoch_start=1, swa_lrs=None)
 
     trainer = Trainer.from_argparse_args(
         args, callbacks=[checkpoint_callback], logger=logger
