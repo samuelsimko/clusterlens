@@ -69,7 +69,10 @@ def get_cluster_maps(
         maps += [
             [
                 np.array(
-                    [obj.get_obs_map(idx, f).astype(float) for f in ["t", "q", "u"]]
+                    [
+                        obj.get_obs_map(idx, "t").astype(float),
+                        *[t.astype(float) for t in obj.get_obs_map(idx, "qu")],
+                    ]
                 ),
                 i,
             ]
@@ -78,7 +81,10 @@ def get_cluster_maps(
         unl_maps += [
             [
                 np.array(
-                    [obj.get_unl_map(idx, f).astype(float) for f in ["t", "q", "u"]]
+                    [
+                        obj.get_unl_map(idx, "t").astype(float),
+                        *[t.astype(float) for t in obj.get_unl_map(idx, "qu")],
+                    ]
                 ),
                 i,
             ]

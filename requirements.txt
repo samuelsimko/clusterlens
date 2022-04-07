@@ -1,4 +1,4 @@
--e git+https://github.com/carronj/LensIt.git@5276afbf840234c3440ad2817d7407d20bfcac8d#egg=lensit
+-e git+https://github.com/samuelsimko/LensIt.git@fd5f6f43e923689702044ae7a6b93335e24a0753#egg=lensit
 black
 camb
 click
