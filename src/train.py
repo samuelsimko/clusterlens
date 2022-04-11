@@ -40,7 +40,14 @@ def main(args):
     seed_everything(args.seed)
 
     checkpoint_name = "_".join(
-        [args.model, args.loss, *args.input_type, *args.output_type, *args.train_dirs]
+        [
+            args.model,
+            args.name,
+            args.loss,
+            *args.input_type,
+            *args.output_type,
+            *args.train_dirs,
+        ]
     )
 
     checkpoint_callback = ModelCheckpoint(
@@ -224,6 +231,18 @@ if __name__ == "__main__":
         help="The area to crop randomly",
         type=int,
         default=None,
+    )
+    parser.add_argument(
+        "--replace_qu",
+        help="Replace the qu maps by something else",
+        choices=[None, "noise", "nothing", "t"],
+        default=None,
+    )
+    parser.add_argument(
+        "--name",
+        help="Name of the model inside the logs",
+        default="",
+        type=str,
     )
 
     temp_args, _ = parser.parse_known_args()

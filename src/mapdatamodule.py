@@ -20,6 +20,7 @@ class MapDataset(Dataset):
         output_type="kappa_map",
         input_type="tmap",
         crop=None,
+        replace_qu=None,
     ):
         super().__init__()
 
@@ -27,6 +28,7 @@ class MapDataset(Dataset):
         self.output_type = output_type
         self.input_type = input_type
         self.crop = crop
+        self.replace_qu = replace_qu
 
         self.args = []
         self.maps = []
@@ -142,17 +144,14 @@ class MapDataset(Dataset):
             if map_type.endswith("maps"):
                 if map_type.startswith("obs"):
                     sample.append(torch.from_numpy(self.maps[map_idx][idx][0]).float())
-                    continue
                 elif map_type.startswith("len"):
                     sample.append(
                         torch.from_numpy(self.len_maps[map_idx][idx][0]).float()
                     )
-                    continue
                 elif map_type.startswith("unl"):
                     sample.append(
                         torch.from_numpy(self.unl_maps[map_idx][idx][0]).float()
                     )
-                    continue
                 elif map_type.startswith("dif"):
                     sample.append(
                         torch.from_numpy(
@@ -160,7 +159,19 @@ class MapDataset(Dataset):
                             - self.unl_maps[map_idx][idx][0]
                         ).float()
                     )
-                    continue
+                if self.replace_qu is not None:
+                    if self.replace_qu == "nothing":
+                        sample[-1][1:, :, :] = torch.zeros_like(sample[-1][1:, :, :])
+                    elif self.replace_qu == "noise":
+                        sample[-1][1:, :, :] = torch.randn(
+                            size=sample[-1][1:, :, :].shape
+                        )
+                    elif self.replace_qu == "t":
+                        sample[-1][1, :, :] = sample[-1][0, :, :]
+                        sample[-1][2, :, :] = sample[-1][0, :, :]
+                    print(sample[-1])
+                    # print(torch.std_mean(sample[-1][1]))
+                continue
 
             # Specific map
             j = list("tqu").index(map_type[4])
@@ -205,6 +216,7 @@ class MapDataModule(pl.LightningDataModule):
         output_type,
         input_type,
         crop=None,
+        replace_qu=None,
         **args
     ):
         super().__init__()
@@ -215,6 +227,7 @@ class MapDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.output_type = output_type
         self.input_type = input_type
+        self.replace_qu = replace_qu
         self.crop = crop
 
     def setup(self, stage=None):
@@ -225,6 +238,7 @@ class MapDataModule(pl.LightningDataModule):
                 self.output_type,
                 input_type=self.input_type,
                 crop=self.crop,
+                replace_qu=self.replace_qu,
             )
             self.npix = self.train_dataset.npix
             self.masses = self.train_dataset.masses
@@ -238,6 +252,7 @@ class MapDataModule(pl.LightningDataModule):
                 self.output_type,
                 input_type=self.input_type,
                 crop=self.crop,
+                replace_qu=self.replace_qu,
             )
             self.npix = self.val_dataset.npix
             self.masses = self.val_dataset.masses
