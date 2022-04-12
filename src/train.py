@@ -94,7 +94,6 @@ def main(args):
                 map_size=(dm.npix if args.crop is None else args.crop),
                 input_channels=get_num_channels(dm.input_type),
                 final_channels=get_num_channels(dm.output_type),
-                masses=dm.masses,
                 mass_plotter=mass_plotter,
             )
         else:
@@ -103,7 +102,6 @@ def main(args):
                 map_size=(dm.npix if args.crop is None else args.crop),
                 input_channels=get_num_channels(dm.input_type),
                 final_channels=get_num_channels(dm.output_type),
-                masses=dm.masses,
                 mass_plotter=mass_plotter,
             )
     elif args.model == "mspr":

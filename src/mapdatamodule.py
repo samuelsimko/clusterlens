@@ -10,6 +10,20 @@ from torchvision.transforms import Normalize
 from torch.utils.data import DataLoader, Dataset
 
 
+def get_training_mass_std_mean(train_dirs):
+    """Return the std and the mean of the training masses."""
+    kappa_maps = []
+    for path in train_dirs:
+        kappa_maps.append(
+            np.load(os.path.join(path, "kappa_maps.npy"), allow_pickle=True)
+        )
+    masses = np.sort(
+        np.unique(np.array([km[:, -1] for km in kappa_maps]).flatten())
+    ).astype(float)
+    masses = np.log(masses / 500)
+    return np.std(masses), np.mean(masses)
+
+
 class MapDataset(Dataset):
     """Map Dataset"""
 
@@ -21,6 +35,8 @@ class MapDataset(Dataset):
         input_type="tmap",
         crop=None,
         replace_qu=None,
+        masses_mean=None,
+        masses_std=None,
     ):
         super().__init__()
 
@@ -57,13 +73,9 @@ class MapDataset(Dataset):
         )
         self.len = self.len_cumsum[-1] + 1
 
-        # Get masses
-        self.masses = np.sort(
-            np.unique(np.array([km[:, -1] for km in self.kappa_maps]).flatten())
-        ).astype(float)
-        self.masses = np.log(self.masses / 500)
-        print(self.masses)
-        self.masses_std, self.masses_mean = np.std(self.masses), np.mean(self.masses)
+        self.masses_mean = masses_mean
+        self.masses_std = masses_std
+
         self.mass_normalize = Normalize(self.masses_mean, self.masses_std)
 
     def __len__(self):
@@ -169,7 +181,6 @@ class MapDataset(Dataset):
                     elif self.replace_qu == "t":
                         sample[-1][1, :, :] = sample[-1][0, :, :]
                         sample[-1][2, :, :] = sample[-1][0, :, :]
-                    print(sample[-1])
                     # print(torch.std_mean(sample[-1][1]))
                 continue
 
@@ -229,8 +240,14 @@ class MapDataModule(pl.LightningDataModule):
         self.input_type = input_type
         self.replace_qu = replace_qu
         self.crop = crop
+        self.masses_std = None
+        self.masses_mean = None
 
     def setup(self, stage=None):
+        if self.masses_std is None:
+            self.masses_std, self.masses_mean = get_training_mass_std_mean(
+                self.train_dirs
+            )
         if stage == "fit" or stage is None:
             self.train_dataset = MapDataset(
                 self.train_dirs,
@@ -239,11 +256,10 @@ class MapDataModule(pl.LightningDataModule):
                 input_type=self.input_type,
                 crop=self.crop,
                 replace_qu=self.replace_qu,
+                masses_mean=self.masses_mean,
+                masses_std=self.masses_std,
             )
             self.npix = self.train_dataset.npix
-            self.masses = self.train_dataset.masses
-            self.masses_mean = self.train_dataset.masses_mean
-            self.masses_std = self.train_dataset.masses_std
 
         if stage == "val" or stage is None:
             self.val_dataset = MapDataset(
@@ -253,9 +269,10 @@ class MapDataModule(pl.LightningDataModule):
                 input_type=self.input_type,
                 crop=self.crop,
                 replace_qu=self.replace_qu,
+                masses_mean=self.masses_mean,
+                masses_std=self.masses_std,
             )
             self.npix = self.val_dataset.npix
-            self.masses = self.val_dataset.masses
 
     def train_dataloader(self):
         return DataLoader(

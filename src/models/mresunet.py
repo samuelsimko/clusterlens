@@ -214,7 +214,6 @@ class MResUNet(pl.LightningModule):
         output_type="kappa_map",
         loss="mse",
         final_channels=1,
-        masses=None,
         final_relu=False,
         mass_plotter=None,
         **kwargs,
@@ -226,7 +225,6 @@ class MResUNet(pl.LightningModule):
         self.input_channels = input_channels
         self.nb_enc_boxes = nb_enc_boxes
         self.nb_channels_first_box = nb_channels_first_box
-        self.masses = masses
         self.final_relu = final_relu
         self.mass_plotter = mass_plotter
 
