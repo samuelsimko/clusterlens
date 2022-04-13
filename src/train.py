@@ -2,6 +2,7 @@
 import random
 from argparse import ArgumentParser
 import os
+import numpy as np
 import pickle
 
 import torch
@@ -134,6 +135,20 @@ def main(args):
             npix=(dm.npix if args.crop is None else args.crop),
             input_channels=get_num_channels(dm.input_type),
         )
+
+    if args.predict_validation and args.output_type == ["mass"]:
+        model.train(False)
+        with torch.no_grad():
+            ys = np.array([])
+            y_hats = np.array([])
+            for x, y in dm.val_dataloader():
+                y_hat = model(x)
+                ys = np.concatenate((ys, y.cpu().flatten().numpy()))
+                y_hats = np.concatenate((y_hats, y_hat.cpu().flatten().numpy()))
+            os.makedirs(checkpoint_name, exist_ok=True)
+            np.save(os.path.join(checkpoint_name, "y_hats"), y_hats)
+            np.save(os.path.join(checkpoint_name, "ys"), ys)
+        return
 
     if args.tune:
         tune(args, dm)
@@ -332,6 +347,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--lr_find",
         help="Find best lr at initial step",
+        default=False,
+        type=bool,
+    )
+    parser.add_argument(
+        "--predict_validation",
+        help="Don't train the model, only predict the masses of validation dataset",
         default=False,
         type=bool,
     )
