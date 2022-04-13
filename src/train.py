@@ -137,30 +137,26 @@ def main(args):
             input_channels=get_num_channels(dm.input_type),
         )
 
-    if args.predict_validation and args.output_type == ["mass"]:
-        model.train(False)
-        with torch.no_grad():
-            ys = np.array([])
-            y_hats = np.array([])
-            for x, y in tqdm.tqdm(dm.val_dataloader()):
-                y_hat = model(x)
-                y, y_hat = mass_plotter.destandardize(y), mass_plotter.destandardize(
-                    y_hat
-                )
-                ys = np.concatenate((ys, y.cpu().flatten().numpy()))
-                y_hats = np.concatenate((y_hats, y_hat.cpu().flatten().numpy()))
-            os.makedirs(checkpoint_name, exist_ok=True)
-            np.save(os.path.join(checkpoint_name, "y_hats"), y_hats)
-            np.save(os.path.join(checkpoint_name, "ys"), ys)
-        return
-
     if args.tune:
         tune(args, dm)
     else:
-
         trainer = Trainer.from_argparse_args(
             args, callbacks=[checkpoint_callback], logger=logger
         )
+
+        if args.predict_validation and args.output_type == ["mass"]:
+            model.train(False)
+            model.return_y_in_pred = True
+            predictions = trainer.predict(model, dataloaders=dm.val_dataloader())
+            predictions = mass_plotter.destandardize(
+                np.array(np.hstack([[y.cpu().numpy() for y in x] for x in predictions]))
+            )
+            os.makedirs(checkpoint_name, exist_ok=True)
+            np.save(
+                os.path.join(checkpoint_name, "predictions"),
+                predictions.reshape(predictions.shape[:2]),
+            )
+            return
 
         if args.lr_find:
             lr_finder = trainer.tuner.lr_find(model, dm, update_attr=True)

@@ -239,6 +239,7 @@ class MResUNet(pl.LightningModule):
         self.input_channels = input_channels
         self.final_relu = final_relu
         self.mass_plotter = mass_plotter
+        self.return_y_in_pred = False
 
         if loss == "msle":
             self.loss = lambda x, y: F.mse_loss(
@@ -401,4 +402,6 @@ class MResUNet(pl.LightningModule):
     def predict_step(self, batch, batch_idx):
         x, y = batch
         pred = self(x)
+        if self.return_y_in_pred:
+            return y, pred
         return pred
