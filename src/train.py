@@ -8,7 +8,7 @@ import torch
 import pytorch_lightning as pl
 
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint, StochasticWeightAveraging
 from pytorch_lightning.loggers import TensorBoardLogger
 from torchvision.transforms import transforms
 
@@ -138,9 +138,17 @@ def main(args):
     if args.tune:
         tune(args, dm)
     else:
+
         trainer = Trainer.from_argparse_args(
             args, callbacks=[checkpoint_callback], logger=logger
         )
+
+        if args.lr_find:
+            lr_finder = trainer.tuner.lr_find(model, dm, update_attr=True)
+            print("Results:", lr_finder.results)
+            new_lr = lr_finder.suggestion()
+            print("Suggested lr: ", new_lr)
+            print("Model lr:", model.lr)
 
         trainer.fit(model, dm)
 
@@ -320,6 +328,12 @@ if __name__ == "__main__":
         help="The directory to hold the resulting logs",
         default="logs",
         type=str,
+    )
+    parser.add_argument(
+        "--lr_find",
+        help="Find best lr at initial step",
+        default=False,
+        type=bool,
     )
 
     temp_args, _ = parser.parse_known_args()
