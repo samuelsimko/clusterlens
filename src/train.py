@@ -6,6 +6,7 @@ import numpy as np
 import pickle
 
 import torch
+import tqdm
 import pytorch_lightning as pl
 
 from pytorch_lightning import Trainer, seed_everything
@@ -141,8 +142,11 @@ def main(args):
         with torch.no_grad():
             ys = np.array([])
             y_hats = np.array([])
-            for x, y in dm.val_dataloader():
+            for x, y in tqdm.tqdm(dm.val_dataloader()):
                 y_hat = model(x)
+                y, y_hat = mass_plotter.destandardize(y), mass_plotter.destandardize(
+                    y_hat
+                )
                 ys = np.concatenate((ys, y.cpu().flatten().numpy()))
                 y_hats = np.concatenate((y_hats, y_hat.cpu().flatten().numpy()))
             os.makedirs(checkpoint_name, exist_ok=True)
