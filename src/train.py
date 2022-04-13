@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 import random
 from argparse import ArgumentParser
+import os
+import pickle
 
 import torch
-import torchmetrics
+import pytorch_lightning as pl
+
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.callbacks import ModelCheckpoint, StochasticWeightAveraging
+from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 from torchvision.transforms import transforms
 
@@ -15,6 +18,11 @@ from models.resnet import ResNet
 from models.sam import MSPR, ProgressiveMassEstimation
 
 from massplotter import MassPlotter
+from dictlogger import DictLogger
+
+import optuna
+
+from optuna.integration import PyTorchLightningPruningCallback
 
 
 def get_std_mean():
@@ -52,15 +60,15 @@ def main(args):
 
     checkpoint_callback = ModelCheckpoint(
         monitor="val_loss",
-        dirpath="checkpoints",
+        dirpath=args.checkpoints_dir,
         filename=checkpoint_name + "-{epoch:02d}-{val_loss:.4f}",
         mode="min",
         # save_top_k=3,
         # save_last=True,
     )
 
-    logger = TensorBoardLogger(name=checkpoint_name, save_dir="logs_test")
-    logger.log_hyperparams(vars(args))
+    logger = TensorBoardLogger(name=checkpoint_name, save_dir=args.logs_dir)
+    logger.log_hyperparams(dict(lr=args.lr, batch_size=args.batch_size))
 
     if not args.std or not args.mean:
         # Get mean and std of training datasets
@@ -127,13 +135,66 @@ def main(args):
             input_channels=get_num_channels(dm.input_type),
         )
 
-    # swa = StochasticWeightAveraging(swa_epoch_start=1, swa_lrs=None)
+    if args.tune:
+        tune(args, dm)
+    else:
+        trainer = Trainer.from_argparse_args(
+            args, callbacks=[checkpoint_callback], logger=logger
+        )
 
-    trainer = Trainer.from_argparse_args(
-        args, callbacks=[checkpoint_callback], logger=logger
-    )
+        trainer.fit(model, dm)
 
-    trainer.fit(model, dm)
+
+def tune(args, dm):
+    """Use Optuna to tune hyperparameters"""
+
+    pruner = optuna.pruners.MedianPruner()
+
+    def objective(trial):
+        """Objective function to use for the trial"""
+
+        checkpoint_callback = pl.callbacks.ModelCheckpoint(
+            os.path.join(args.checkpoints_dir, "trial_{}".format(trial.number)),
+            monitor="val_loss",
+        )
+
+        logger = DictLogger(trial.number)
+
+        trainer = pl.Trainer(
+            logger=logger,
+            checkpoint_callback=checkpoint_callback,
+            max_epochs=args.max_epochs,
+            gpus=0 if torch.cuda.is_available() else None,
+            log_every_n_steps=2,
+            callbacks=[PyTorchLightningPruningCallback(trial, monitor="val_loss")],
+        )
+
+        model = MResUNet(
+            **vars(args),
+            map_size=(dm.npix if args.crop is None else args.crop),
+            input_channels=get_num_channels(dm.input_type),
+            final_channels=get_num_channels(dm.output_type),
+            trial=trial,
+        )
+        trainer.fit(model, dm)
+
+        return logger.metrics[-1]["val_loss"]
+
+    study = optuna.create_study(direction="minimize", pruner=pruner)
+    study.optimize(objective, n_trials=3)
+
+    print("Number of finished trials: {}".format(len(study.trials)))
+
+    print("Best trial:")
+    trial = study.best_trial
+
+    print("  Value: {}".format(trial.value))
+
+    print("  Params: ")
+    for key, value in trial.params.items():
+        print("    {}: {}".format(key, value))
+
+    pickle.dump(study, open("study_dump", "wb"))
 
 
 if __name__ == "__main__":
@@ -240,6 +301,24 @@ if __name__ == "__main__":
         "--name",
         help="Name of the model inside the logs",
         default="",
+        type=str,
+    )
+    parser.add_argument(
+        "--tune",
+        help="Tune hyperparameters using Optuna",
+        default=False,
+        type=bool,
+    )
+    parser.add_argument(
+        "--checkpoints_dir",
+        help="The directory to hold the resulting checkpoints",
+        default="checkpoints",
+        type=str,
+    )
+    parser.add_argument(
+        "--logs_dir",
+        help="The directory to hold the resulting logs",
+        default="logs",
         type=str,
     )
 

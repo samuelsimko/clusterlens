@@ -216,15 +216,27 @@ class MResUNet(pl.LightningModule):
         final_channels=1,
         final_relu=False,
         mass_plotter=None,
+        trial=None,
         **kwargs,
     ):
         super(MResUNet, self).__init__()
 
-        self.lr = lr
+        if trial is not None:
+            self.lr = trial.suggest_loguniform("lr", 1e-5, 0.02)
+            self.dropout = trial.suggest_uniform("dropout", 0, 0.5)
+            self.nb_enc_boxes = trial.suggest_categorical("nb_enc_boxes", [3, 4])
+            self.nb_channels_first_box = trial.suggest_categorical(
+                "nb_channels_first_box", [32, 64]
+            )
+        else:
+            self.lr = lr
+            self.dropout = 0.2
+            self.nb_enc_boxes = nb_enc_boxes
+            self.nb_channels_first_box = nb_channels_first_box
+
+        self.nb_channels_first_box = nb_channels_first_box
         self.output_type = output_type
         self.input_channels = input_channels
-        self.nb_enc_boxes = nb_enc_boxes
-        self.nb_channels_first_box = nb_channels_first_box
         self.final_relu = final_relu
         self.mass_plotter = mass_plotter
 
@@ -240,17 +252,17 @@ class MResUNet(pl.LightningModule):
             [
                 EncodingBox(
                     in_channels=input_channels,
-                    out_channels=nb_channels_first_box,
+                    out_channels=self.nb_channels_first_box,
                     kernel_size=3,
                     rescale=False,
                 ),
                 *[
                     EncodingBox(
-                        in_channels=(2**i) * nb_channels_first_box,
-                        out_channels=(2 ** (i + 1)) * nb_channels_first_box,
+                        in_channels=(2**i) * self.nb_channels_first_box,
+                        out_channels=(2 ** (i + 1)) * self.nb_channels_first_box,
                         kernel_size=3,
                     )
-                    for i in range(nb_enc_boxes - 1)
+                    for i in range(self.nb_enc_boxes - 1)
                 ],
             ]
         )
@@ -260,28 +272,28 @@ class MResUNet(pl.LightningModule):
             [
                 *[
                     DecodingBox(
-                        in_channels=(2 ** (i + 1)) * nb_channels_first_box,
-                        out_channels=(2 ** (i + 1)) * nb_channels_first_box,
-                        final_channels=(2 ** (i)) * nb_channels_first_box,
+                        in_channels=(2 ** (i + 1)) * self.nb_channels_first_box,
+                        out_channels=(2 ** (i + 1)) * self.nb_channels_first_box,
+                        final_channels=(2 ** (i)) * self.nb_channels_first_box,
                         kernel_size=3,
-                        dropout=0.2,
+                        dropout=self.dropout,
                     )
-                    for i in reversed(range(nb_enc_boxes - 2))
+                    for i in reversed(range(self.nb_enc_boxes - 2))
                 ],
                 DecodingBox(
-                    in_channels=nb_channels_first_box,
-                    out_channels=nb_channels_first_box,
+                    in_channels=self.nb_channels_first_box,
+                    out_channels=self.nb_channels_first_box,
                     final_channels=final_channels,
                     kernel_size=3,
-                    dropout=0.2,
+                    dropout=self.dropout,
                 ),
             ]
         )
 
         # A convolution to divide the number of channels by 2 before the decoding stage
         self.reduce_channel = nn.Conv2d(
-            in_channels=(2 ** (nb_enc_boxes - 1)) * nb_channels_first_box,
-            out_channels=(2 ** (nb_enc_boxes - 2)) * nb_channels_first_box,
+            in_channels=(2 ** (self.nb_enc_boxes - 1)) * self.nb_channels_first_box,
+            out_channels=(2 ** (self.nb_enc_boxes - 2)) * self.nb_channels_first_box,
             kernel_size=3,
             padding=1,
         )
@@ -377,6 +389,7 @@ class MResUNet(pl.LightningModule):
                 "y": y.cpu().numpy(),
                 "y_hat": y_hat.cpu().numpy(),
             }
+        return {"val_loss": val_loss}
 
     def validation_epoch_end(self, outputs):
         """Plot graphs to writer at the end of each validation epoch"""

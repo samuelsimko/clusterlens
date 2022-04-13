@@ -2,6 +2,8 @@
 black
 camb
 click
+optuna
+plotly
 pytorch-lightning
 torch
 torchvision
