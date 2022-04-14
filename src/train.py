@@ -6,7 +6,6 @@ import numpy as np
 import pickle
 
 import torch
-import tqdm
 import pytorch_lightning as pl
 
 from pytorch_lightning import Trainer, seed_everything

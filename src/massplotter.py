@@ -23,7 +23,7 @@ class MassPlotter:
         )
         return values
 
-    def plot_all(self, outputs, current_epoch, destandardize=True):
+    def plot_all(self, outputs, current_epoch, destandardize=True, step="validation"):
 
         y_hat = torch.Tensor(np.concatenate([tmp["y_hat"] for tmp in outputs]))
         y = torch.Tensor(np.concatenate([tmp["y"] for tmp in outputs]))
@@ -48,7 +48,9 @@ class MassPlotter:
         )
         plt.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
 
-        self.logger.experiment.add_figure("Prediction table", fig, current_epoch)
+        self.logger.experiment.add_figure(
+            "prediction_table_{}".format(step), fig, current_epoch
+        )
 
         fig, axs = plt.subplots(1, 1)
         axs.plot(
@@ -70,6 +72,8 @@ class MassPlotter:
         axs.set_xscale("log")
         plt.xlabel("Real mass")
         plt.ylabel("Predicted mass")
-        plt.title("Predictions for validation set, epoch {}".format(current_epoch))
+        plt.title("Predictions for {} set, epoch {}".format(step, current_epoch))
 
-        self.logger.experiment.add_figure("Prediction plot", fig, current_epoch)
+        self.logger.experiment.add_figure(
+            "prediction_plot_{}".format(step), fig, current_epoch
+        )

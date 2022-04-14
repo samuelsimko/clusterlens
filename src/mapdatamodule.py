@@ -18,7 +18,7 @@ def get_training_mass_std_mean(train_dirs):
             np.load(os.path.join(path, "kappa_maps.npy"), allow_pickle=True)
         )
     masses = np.sort(
-        np.unique(np.array([km[:, -1] for km in kappa_maps]).flatten())
+        np.unique(np.concatenate([km[:, -1] for km in kappa_maps]).flatten())
     ).astype(float)
     masses = np.log(masses / 500)
     return np.std(masses), np.mean(masses)

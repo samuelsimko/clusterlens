@@ -159,7 +159,7 @@ class DecodingBox(nn.Module):
         kernel_size=3,
         stride=1,
         activation=nn.SELU(),
-        final_activation=nn.SELU(),
+        final_activation=nn.Identity(),
         dropout=0.2,
     ):
         super(DecodingBox, self).__init__()
@@ -357,24 +357,17 @@ class MResUNet(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         x, y = batch
 
-        """
-        if "mass" in self.output_type:
-            # Put mass to front
-            y.insert(0, y.pop(self.output_type.index("mass")))
-            y_hat, mass = self(x)
-            loss = self.loss(y_hat, y[1:])
-            mass_loss = self.loss(mass, y[0])
-            train_loss = (mass_loss + loss)/2
-            self.log("train_loss", train_loss)
-            self.log("map_train_loss", loss)
-            self.log("mass_train_loss", mass_loss)
-            return train_loss
-        """
-
         y_hat = self(x)
         loss = self.loss(y_hat, y)
         self.log("train_loss", loss)
-        return loss
+        if "mass" in self.output_type:
+            # Return values to plot graphs
+            return {
+                "loss": loss,
+                "y": y.detach().cpu().numpy(),
+                "y_hat": y_hat.detach().cpu().numpy(),
+            }
+        return {"loss": loss}
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
@@ -396,8 +389,13 @@ class MResUNet(pl.LightningModule):
         """Plot graphs to writer at the end of each validation epoch"""
 
         if "mass" in self.output_type and self.mass_plotter is not None:
+            self.mass_plotter.plot_all(outputs, self.current_epoch, step="validation")
 
-            self.mass_plotter.plot_all(outputs, self.current_epoch)
+    def training_epoch_end(self, outputs):
+        """Plot graphs to writer at the end of each training epoch"""
+
+        if "mass" in self.output_type and self.mass_plotter is not None:
+            self.mass_plotter.plot_all(outputs, self.current_epoch, step="training")
 
     def predict_step(self, batch, batch_idx):
         x, y = batch
