@@ -159,7 +159,7 @@ class DecodingBox(nn.Module):
         kernel_size=3,
         stride=1,
         activation=nn.SELU(),
-        final_activation=nn.Identity(),
+        final_activation=nn.SELU(),
         dropout=0.2,
     ):
         super(DecodingBox, self).__init__()
@@ -286,6 +286,7 @@ class MResUNet(pl.LightningModule):
                     out_channels=self.nb_channels_first_box,
                     final_channels=final_channels,
                     kernel_size=3,
+                    final_activation=nn.Identity(),
                     dropout=self.dropout,
                 ),
             ]
