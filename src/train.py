@@ -36,6 +36,24 @@ def get_std_mean():
     return torch.std_mean(x, [0, 2, 3])
 
 
+def print_stats_dm():
+    """Print statistics of the training and validation dataset"""
+    dm = MapDataModule(**vars(args), transform=None)
+    dm.setup()
+    dm.batch_size = len(dm.train_dataset)
+    dl = dm.train_dataloader()
+    x, y = next(iter(dl))
+    print("train X std mean:", torch.std_mean(x, [0, 2, 3]))
+    print("train y std mean:", torch.std_mean(y))
+
+    dm.batch_size = len(dm.val_dataset)
+    dl = dm.val_dataloader()
+    x, y = next(iter(dl))
+    print("val X std mean:", torch.std_mean(x, [0, 2, 3]))
+    print("val y std mean:", torch.std_mean(y))
+    exit()
+
+
 def get_num_channels(input_type):
     """Return the number of channels from the input/output type"""
     return sum([3 if x.endswith("maps") else 1 for x in input_type])
@@ -134,6 +152,8 @@ def main(args):
             **vars(args),
             npix=(dm.npix if args.crop is None else args.crop),
             input_channels=get_num_channels(dm.input_type),
+            final_channels=1,
+            mass_plotter=mass_plotter,
         )
 
     if args.tune:

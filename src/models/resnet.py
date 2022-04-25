@@ -50,13 +50,21 @@ class ResNet(pl.LightningModule):
         nb_blocks,
         npix,
         loss="mse",
+        output_type="kappa_map",
+        lr=0.001,
+        final_channels=1,
+        mass_plotter=None,
         **kwargs
     ):
         super().__init__()
-        self.lr = kwargs["lr"]
+        self.lr = lr
+        self.mass_plotter = mass_plotter
+        self.output_type = output_type
 
         if loss == "msle":
-            self.loss = lambda x, y: F.mse_loss(torch.log(x + 1), torch.log(y + 1))
+            self.loss = lambda x, y: F.mse_loss(
+                torch.log(x + 1e-14), torch.log(y + 1e-14)
+            )
         else:
             self.loss = F.mse_loss
 
@@ -65,16 +73,22 @@ class ResNet(pl.LightningModule):
             *(ResBlock(nb_channels, kernel_size) for _ in range(nb_blocks))
         )
         self.conv1 = nn.Conv2d(
-            in_channels=nb_channels, out_channels=1, kernel_size=3, padding=1
+            in_channels=nb_channels,
+            out_channels=final_channels,
+            kernel_size=3,
+            padding=1,
         )
-        self.lin = nn.Linear(npix, npix)
+
+        if ["mass"] == self.output_type:
+            self.lin = nn.Linear(in_features=npix * npix, out_features=1)
+        else:
+            raise NotImplementedError("Not yet implemented")
 
     def forward(self, x):
         x = F.relu(self.conv0(x))
         x = self.resblocks(x)
         x = self.conv1(x)
-        x = self.lin(x)
-        x = F.relu(x)
+        x = self.lin(x.view(x.shape[0], -1)).view((x.shape[0], 1, 1, 1))
         return x
 
     @staticmethod
@@ -93,18 +107,47 @@ class ResNet(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x, y = batch
+
         y_hat = self(x)
-        loss = F.mse_loss(y_hat, y)
+        loss = self.loss(y_hat, y)
         self.log("train_loss", loss)
-        return loss
+        if "mass" in self.output_type:
+            # Return values to plot graphs
+            return {
+                "loss": loss,
+                "y": y.detach().cpu().numpy(),
+                "y_hat": y_hat.detach().cpu().numpy(),
+            }
+        return {"loss": loss}
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
-        val_loss = F.mse_loss(y_hat, y)
+        val_loss = self.loss(y_hat, y)
         self.log("val_loss", val_loss)
+
+        if "mass" in self.output_type:
+            # Return values to plot graphs
+            return {
+                "val_loss": val_loss,
+                "y": y.cpu().numpy(),
+                "y_hat": y_hat.cpu().numpy(),
+            }
+        return {"val_loss": val_loss}
 
     def predict_step(self, batch, batch_idx):
         x, y = batch
         pred = self(x)
         return pred
+
+    def validation_epoch_end(self, outputs):
+        """Plot graphs to writer at the end of each validation epoch"""
+
+        if "mass" in self.output_type and self.mass_plotter is not None:
+            self.mass_plotter.plot_all(outputs, self.current_epoch, step="validation")
+
+    def training_epoch_end(self, outputs):
+        """Plot graphs to writer at the end of each training epoch"""
+
+        if "mass" in self.output_type and self.mass_plotter is not None:
+            self.mass_plotter.plot_all(outputs, self.current_epoch, step="training")
