@@ -1,5 +1,5 @@
 ===========
-clusterlens
+Clusterlens
 ===========
 
 About
@@ -31,18 +31,20 @@ Create simulated maps by executing `gen_maps.py`
 
 .. code-block:: console
 
-   $ python src/gen_maps.py 1 2 3 4 traindata --nsims 64 --cambinifile path/to/cambinifile
+   $ python src/gen_maps.py 1 2 3 4 5 traindata --nsims 64 --cambinifile /path/to/cambinifile
+   $ python src/gen_maps.py 1 2 3 4 5 validationdata --nsims 64 --cambinifile /path/to/cambinifile
 
 Here, the script generates maps with masses in (1, 2, 3, 4) * 1e14 M☉.
 `64` maps are created for each mass.
-It will store the maps in the directory `traindata`.
+It will store the training maps in the `traindata` directory, and the validation maps in the 
+`validationdata` directory.
 
 
-To train a model, executing the `train.py` script.
+To train a model, execute the `train.py` script.
 
 .. code-block:: console
 
-   $ python src/train.py --model mresunet --train_dir traindata --val_dir valdata --batch_size 16 --max_epochs 30
+   $ python src/train.py --input_type obs_maps --output_type mass  --model mresunet --train_dir traindata --val_dir validationdata --batch_size 16 --max_epochs 30
 
 For more information on the scripts, call them with the argument `--help`.
 

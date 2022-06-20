@@ -1,14 +1,15 @@
 # -*- coding: utf-8 -*-
-import numpy as np
-import seaborn as sns
-import pandas as pd
-import matplotlib.pyplot as plt
+import torch
 
 import pytorch_lightning as pl
-import torch
-import torchmetrics
 import torch.nn as nn
 import torch.nn.functional as F
+
+
+
+class L1LossFlat(nn.SmoothL1Loss):
+    def forward(self, input: torch.Tensor, target: torch.Tensor):
+        return super().forward(input.view(-1), target.view(-1))
 
 
 class EncodingBoxSubStage(nn.Module):
@@ -69,7 +70,7 @@ class DecodingBoxSubStage(EncodingBoxSubStage):
         stride=1,
         padding=1,
         activation=nn.SELU(),
-        dropout=0.3,
+        dropout=0,  # CHANGED DROPOUT
         concatenate=False,
     ):
         super().__init__(
@@ -206,7 +207,7 @@ class MResUNet(pl.LightningModule):
 
     def __init__(
         self,
-        map_size=40,
+        map_size=64,
         lr=0.001,
         input_channels=1,
         nb_enc_boxes=4,
@@ -240,12 +241,14 @@ class MResUNet(pl.LightningModule):
         self.final_relu = final_relu
         self.mass_plotter = mass_plotter
         self.return_y_in_pred = False
+        self.map_size = map_size
 
         if loss == "msle":
             self.loss = lambda x, y: F.mse_loss(
                 torch.log(x + 1e-14), torch.log(y + 1e-14)
             )
         else:
+            # self.loss = nn.SmoothL1Loss()
             self.loss = F.mse_loss
 
         # `nb_enc_boxes` encoding boxes
@@ -301,13 +304,38 @@ class MResUNet(pl.LightningModule):
         )
 
         if ["mass"] == self.output_type:
-            # self.fc = torch.nn.Linear(in_features=(final_channels-1)*64*64, out_features=(final_channels-1)*64*64)
-            self.avg = nn.AvgPool2d(map_size)
-            self.fc_mass = torch.nn.Linear(
-                in_features=final_channels * 64 * 64, out_features=1
+            self.final_layers = nn.Sequential(
+                *[
+                    nn.Flatten(),
+                    nn.BatchNorm1d(
+                        self.map_size * self.map_size,
+                        eps=1e-05,
+                        momentum=0.1,
+                        affine=True,
+                        track_running_stats=True,
+                    ),
+                    # nn.Dropout(p=0.1),
+                    nn.Linear(self.map_size * self.map_size, 32, bias=True),
+                    nn.ReLU(inplace=True),
+                    nn.BatchNorm1d(
+                        32,
+                        eps=1e-05,
+                        momentum=0.1,
+                        affine=True,
+                        track_running_stats=True,
+                    ),
+                    # nn.Dropout(p=0.1),
+                    nn.Linear(32, 16, bias=True),
+                    nn.BatchNorm1d(
+                        16,
+                        eps=1e-05,
+                        momentum=0.1,
+                        affine=True,
+                        track_running_stats=True,
+                    ),
+                    nn.Linear(16, 1),
+                ]
             )
-        # else:
-        # self.fc = torch.nn.Linear(in_features=final_channels*64*64, out_features=final_channels*64*64)
 
     @staticmethod
     def add_model_specific_args(parent_parser):
@@ -339,28 +367,27 @@ class MResUNet(pl.LightningModule):
             )
 
         if ["mass"] == self.output_type:
-            mass = self.fc_mass(x.view(x.shape[0], -1)).view((x.shape[0], 1, 1, 1))
-            return mass
-
-        # Final linear layer
-        # x = self.fc(x.view(x.shape[0], -1)).view(x.shape)
-
-        if self.final_relu:
-            x = F.relu(x)
+            mass = self.final_layers(x)
+            return mass.view((mass.shape[0], 1, 1, 1))
 
         return x
 
-    def configure_optimizers(self, step_size=1):
+    def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
-        # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size)
-        return [optimizer]  # , [lr_scheduler]
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.8)
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": scheduler,
+            "monitor": "val_loss",
+        }
 
     def training_step(self, batch, batch_idx):
         x, y = batch
 
         y_hat = self(x)
         loss = self.loss(y_hat, y)
-        self.log("train_loss", loss)
+        self.log("train_loss", loss, on_epoch=True)
         if "mass" in self.output_type:
             # Return values to plot graphs
             return {

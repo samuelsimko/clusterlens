@@ -10,20 +10,6 @@ from torchvision.transforms import Normalize
 from torch.utils.data import DataLoader, Dataset
 
 
-def get_training_mass_std_mean(train_dirs):
-    """Return the std and the mean of the training masses."""
-    kappa_maps = []
-    for path in train_dirs:
-        kappa_maps.append(
-            np.load(os.path.join(path, "kappa_maps.npy"), allow_pickle=True)
-        )
-    masses = np.sort(
-        np.unique(np.concatenate([km[:, -1] for km in kappa_maps]).flatten())
-    ).astype(float)
-    masses = np.log(masses / 500)
-    return np.std(masses), np.mean(masses)
-
-
 class MapDataset(Dataset):
     """Map Dataset"""
 
@@ -37,6 +23,8 @@ class MapDataset(Dataset):
         replace_qu=None,
         masses_mean=None,
         masses_std=None,
+        keep_mass_smaller_than=None,
+        ragh=False,
     ):
         super().__init__()
 
@@ -45,32 +33,66 @@ class MapDataset(Dataset):
         self.input_type = input_type
         self.crop = crop
         self.replace_qu = replace_qu
+        self.keep_mass_smaller_than = keep_mass_smaller_than
+        self.print_first_time = True
+        self.ragh = False
 
         self.args = []
         self.maps = []
         self.kappa_maps = []
         self.unl_maps = []
         self.len_maps = []
+        self.masses = []
 
-        for path in paths:
-            self.args.append(pickle.load(open(os.path.join(path, "args"), "rb")))
-            self.maps.append(np.load(os.path.join(path, "maps.npy"), allow_pickle=True))
-            self.kappa_maps.append(
-                np.load(os.path.join(path, "kappa_maps.npy"), allow_pickle=True)
-            )
-            self.unl_maps.append(
-                np.load(os.path.join(path, "unl_maps.npy"), allow_pickle=True)
-            )
-            self.len_maps.append(
-                np.load(os.path.join(path, "len_maps.npy"), allow_pickle=True)
-            )
+        if self.ragh:
+            print("RAGH")
+            for path in paths:
+                self.args.append(pickle.load(open(os.path.join(path, "args"), "rb")))
+                self.maps.append(
+                    np.load(os.path.join(path, "maps.npy"), allow_pickle=True)
+                )
+                self.masses.append(
+                    np.load(os.path.join(path, "masses.npy"), allow_pickle=True)
+                )
+                self.npix = self.args[0]["npix"]
+        else:
+            for path in paths:
+                self.args.append(pickle.load(open(os.path.join(path, "args"), "rb")))
+                self.maps.append(
+                    np.load(os.path.join(path, "maps.npy"), allow_pickle=True)
+                )
+                self.kappa_maps.append(
+                    np.load(os.path.join(path, "kappa_maps.npy"), allow_pickle=True)
+                )
+                # self.maps.append(np.load(os.path.join(path, "teb_maps.npy"), allow_pickle=True))
+                # self.len_maps.append(
+                # np.load(os.path.join(path, "len_maps.npy"), allow_pickle=True)
+                # )
+                # self.unl_maps.append(
+                # np.load(os.path.join(path, "unl_maps.npy"), allow_pickle=True)
+                # )
+                # self.len_maps.append(
+                # np.load(os.path.join(path, "len_maps.npy"), allow_pickle=True)
+                # )
 
-        self.npix = self.args[0]["npix"]
+                if self.keep_mass_smaller_than is not None:
+                    drop_idx = []
+                    for idx in range(len(self.maps[-1])):
+                        if (
+                            self.kappa_maps[-1][self.maps[-1][idx, -1], -1]
+                            < self.keep_mass_smaller_than
+                        ):
+                            drop_idx.append(idx)
+                    drop_idx = np.array(drop_idx)
+                    self.maps[-1] = self.maps[-1][drop_idx]
+                    # self.unl_maps[-1] = self.unl_maps[-1][drop_idx]
+                    # self.len_maps[-1] = self.len_maps[-1][drop_idx]
+
+                self.npix = self.args[0]["npix"]
 
         # Get cumulated sum of the number of maps in each path - 1
-        self.len_cumsum = (
-            np.cumsum([len(arg["mass"]) * arg["nsims"] for arg in self.args]) - 1
-        )
+        self.len_cumsum = np.cumsum([len(x) for x in self.maps]) - 1
+
         self.len = self.len_cumsum[-1] + 1
 
         self.masses_mean = masses_mean
@@ -90,8 +112,32 @@ class MapDataset(Dataset):
 
         sample = []
 
-        sample.append(self._get_right_maps(self.input_type, map_idx, idx))
-        sample.append(self._get_right_maps(self.output_type, map_idx, idx))
+        if self.ragh:
+            # Maps from Raghanuthan's library
+            sample.append(torch.from_numpy(self.maps[map_idx][idx]).float())
+            sample.append(
+                (
+                    torch.from_numpy(np.array([self.masses[map_idx][idx]])).float()[
+                        None, None, :
+                    ]
+                    - 12.5
+                )
+                / 12.5
+            )
+            if self.replace_qu is not None:
+                if self.replace_qu == "nothing":
+                    sample[-1][1:, :, :] = torch.zeros_like(sample[-1][1:, :, :])
+                    if self.print_first_time:
+                        print("WARNING: replacing Q, U maps with zeros")
+                        self.print_first_time = False
+                if self.replace_qu == "t":
+                    sample[-1][0, :, :] = torch.zeros_like(sample[-1][0, :, :])
+                    if self.print_first_time:
+                        print("WARNING: replacing T maps with zeros")
+                        self.print_first_time = False
+        else:
+            sample.append(self._get_right_maps(self.input_type, map_idx, idx))
+            sample.append(self._get_right_maps(self.output_type, map_idx, idx))
 
         if self.crop is not None:
             # Crop randomly
@@ -99,14 +145,12 @@ class MapDataset(Dataset):
 
         if self.transform:
             sample[0] = self.transform(sample[0])
-            # sample[1] = self.transform(sample[1])
 
         return sample
 
     def _crop(self, *samples, npix, crop):
         """Randomly crops sample to a `crop` x `crop` image for every sample of size `npix` x `npix`"""
-        # x, y = random.randint(0, npix - crop), random.randint(0, npix - crop)
-        x, y = (npix - crop) // 2, (npix - crop) // 2
+        x, y = random.randint(0, npix - crop), random.randint(0, npix - crop)
         samples = list(samples)
         for i in range(len(samples)):
             if isinstance(samples[i], list):
@@ -137,20 +181,19 @@ class MapDataset(Dataset):
             if map_type == "mass":
                 # Standardize maps
                 sample.append(
-                    self.mass_normalize(
-                        torch.log(
-                            torch.Tensor(
-                                [
-                                    self.kappa_maps[map_idx][
-                                        self.maps[map_idx][idx][-1]
-                                    ][-1]
-                                ]
-                            ).float()[None, None, :]
-                            / 500
-                        )
+                    (
+                        torch.Tensor(
+                            [self.kappa_maps[map_idx][self.maps[map_idx][idx][-1]][-1]]
+                        ).float()[None, None, :]
+                        - 12.5
                     )
+                    / 12.5
                 )
                 continue
+
+            # All QU maps
+            if map_type == "qu":
+                sample.append(torch.from_numpy(self.maps[map_idx][idx][0][1:]).float())
 
             # All TQU maps
             if map_type.endswith("maps"):
@@ -174,14 +217,18 @@ class MapDataset(Dataset):
                 if self.replace_qu is not None:
                     if self.replace_qu == "nothing":
                         sample[-1][1:, :, :] = torch.zeros_like(sample[-1][1:, :, :])
+                        if self.print_first_time:
+                            print("WARNING: replacing Q, U maps with zeros")
+                            self.print_first_time = False
                     elif self.replace_qu == "noise":
                         sample[-1][1:, :, :] = torch.randn(
                             size=sample[-1][1:, :, :].shape
                         )
                     elif self.replace_qu == "t":
-                        sample[-1][1, :, :] = sample[-1][0, :, :]
-                        sample[-1][2, :, :] = sample[-1][0, :, :]
-                    # print(torch.std_mean(sample[-1][1]))
+                        sample[-1][0, :, :] = torch.zeros_like(sample[-1][0, :, :])
+                        if self.print_first_time:
+                            print("WARNING: replacing T maps with zeros")
+                            self.print_first_time = False
                 continue
 
             # Specific map
@@ -228,6 +275,7 @@ class MapDataModule(pl.LightningDataModule):
         input_type,
         crop=None,
         replace_qu=None,
+        ragh=False,
         **args
     ):
         super().__init__()
@@ -239,15 +287,15 @@ class MapDataModule(pl.LightningDataModule):
         self.output_type = output_type
         self.input_type = input_type
         self.replace_qu = replace_qu
+        self.ragh = ragh
         self.crop = crop
         self.masses_std = None
         self.masses_mean = None
 
     def setup(self, stage=None):
         if self.masses_std is None:
-            self.masses_std, self.masses_mean = get_training_mass_std_mean(
-                self.train_dirs
-            )
+            # ADDED
+            self.masses_std, self.masses_mean = 1, 0
         if stage == "fit" or stage is None:
             self.train_dataset = MapDataset(
                 self.train_dirs,
@@ -258,6 +306,7 @@ class MapDataModule(pl.LightningDataModule):
                 replace_qu=self.replace_qu,
                 masses_mean=self.masses_mean,
                 masses_std=self.masses_std,
+                ragh=self.ragh,
             )
             self.npix = self.train_dataset.npix
 
@@ -271,6 +320,7 @@ class MapDataModule(pl.LightningDataModule):
                 replace_qu=self.replace_qu,
                 masses_mean=self.masses_mean,
                 masses_std=self.masses_std,
+                ragh=self.ragh,
             )
             self.npix = self.val_dataset.npix
 

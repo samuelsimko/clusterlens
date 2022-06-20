@@ -25,6 +25,8 @@ import optuna
 
 from optuna.integration import PyTorchLightningPruningCallback
 
+from models.other import TimmModel
+
 
 def get_std_mean():
     """Return the std and the mean of the training dataset features"""
@@ -34,24 +36,6 @@ def get_std_mean():
     dl = dm.train_dataloader()
     x, _ = next(iter(dl))
     return torch.std_mean(x, [0, 2, 3])
-
-
-def print_stats_dm():
-    """Print statistics of the training and validation dataset"""
-    dm = MapDataModule(**vars(args), transform=None)
-    dm.setup()
-    dm.batch_size = len(dm.train_dataset)
-    dl = dm.train_dataloader()
-    x, y = next(iter(dl))
-    print("train X std mean:", torch.std_mean(x, [0, 2, 3]))
-    print("train y std mean:", torch.std_mean(y))
-
-    dm.batch_size = len(dm.val_dataset)
-    dl = dm.val_dataloader()
-    x, y = next(iter(dl))
-    print("val X std mean:", torch.std_mean(x, [0, 2, 3]))
-    print("val y std mean:", torch.std_mean(y))
-    exit()
 
 
 def get_num_channels(input_type):
@@ -73,7 +57,7 @@ def main(args):
             args.loss,
             *args.input_type,
             *args.output_type,
-            *args.train_dirs,
+            # *args.train_dirs,
         ]
     )
 
@@ -100,9 +84,6 @@ def main(args):
     transform = transforms.Compose(
         [
             transforms.Normalize(mean=x_mean, std=x_std),
-            # transforms.Lambda(
-            # lambda x: (torch.transpose(x, -2, -1) if torch.rand(1) < 0.5 else x)
-            # ),
         ]
     )
 
@@ -147,7 +128,18 @@ def main(args):
             nb_enc_boxes=3,
             final_channels=1,
         )
-    else:
+    elif args.model == "other":
+        if not args.checkpoint_path:
+            model = TimmModel(
+                **vars(args),
+                map_size=(dm.npix if args.crop is None else args.crop),
+            )
+        else:
+            model = TimmModel.load_from_checkpoint(
+                **vars(args),
+                map_size=(dm.npix if args.crop is None else args.crop),
+            )
+    elif args.model == "resnet":
         model = ResNet(
             **vars(args),
             npix=(dm.npix if args.crop is None else args.crop),
@@ -155,6 +147,8 @@ def main(args):
             final_channels=1,
             mass_plotter=mass_plotter,
         )
+    else:
+        raise NotImplementedError("Model {} not implemented".format())
 
     if args.tune:
         tune(args, dm)
@@ -264,7 +258,7 @@ if __name__ == "__main__":
         type=str,
         default="mresunet",
         help="The model to use",
-        choices=["mresunet", "resnet", "mspr", "pme"],
+        choices=["mresunet", "resnet", "mspr", "pme", "other"],
     )
     parser.add_argument(
         "--train_dirs",
@@ -294,7 +288,7 @@ if __name__ == "__main__":
         default="kappa_map",
         help="The output of the neural net",
         nargs="+",
-        choices=["kappa_map", "mass"] + all_comb_maps,
+        choices=["class", "kappa_map", "mass"] + all_comb_maps,
     )
     parser.add_argument(
         "--input_type",
@@ -383,6 +377,9 @@ if __name__ == "__main__":
 
     if temp_args.model == "resnet":
         parser = ResNet.add_model_specific_args(parser)
+
+    if temp_args.model == "other":
+        parser = TimmModel.add_model_specific_args(parser)
 
     args = parser.parse_args()
 

@@ -17,19 +17,10 @@ class MassPlotter:
     mass_original_mean: Sequence[float]
     mass_original_std: Sequence[float]
 
-    def destandardize(self, mass_list):
-        values = (
-            np.exp(mass_list * self.mass_original_std + self.mass_original_mean) * 500
-        )
-        return values
-
-    def plot_all(self, outputs, current_epoch, destandardize=True, step="validation"):
+    def plot_all(self, outputs, current_epoch, step="validation"):
 
         y_hat = torch.Tensor(np.concatenate([tmp["y_hat"] for tmp in outputs]))
         y = torch.Tensor(np.concatenate([tmp["y"] for tmp in outputs]))
-
-        if destandardize:
-            y, y_hat = self.destandardize(y), self.destandardize(y_hat)
 
         # Show table of statistics of prediction
         pred_std_mean = []
@@ -68,8 +59,8 @@ class MassPlotter:
             label="Predictions",
         )
         axs.legend()
-        axs.set_yscale("log")
-        axs.set_xscale("log")
+        # axs.set_yscale("log")
+        # axs.set_xscale("log")
         plt.xlabel("Real mass")
         plt.ylabel("Predicted mass")
         plt.title("Predictions for {} set, epoch {}".format(step, current_epoch))

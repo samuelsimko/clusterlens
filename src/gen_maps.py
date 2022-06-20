@@ -39,6 +39,7 @@ def get_cluster_maps(
     maps = []
     unl_maps = []
     len_maps = []
+    teb_maps = []
     print(kwargs)
 
     for i, M200 in enumerate(tqdm(mass)):
@@ -69,10 +70,16 @@ def get_cluster_maps(
         maps += [
             [
                 np.array(
-                    [
-                        obj.get_obs_map(idx, "t").astype(float),
-                        *[t.astype(float) for t in obj.get_obs_map(idx, "qu")],
-                    ]
+                    [obj.get_obs_map(idx, f).astype(float) for f in ["t", "q", "u"]]
+                ),
+                i,
+            ]
+            for idx in range(nsims)
+        ]
+        teb_maps += [
+            [
+                np.array(
+                    [obj.get_obs_map(idx, f).astype(float) for f in ["t", "e", "b"]]
                 ),
                 i,
             ]
@@ -81,10 +88,7 @@ def get_cluster_maps(
         unl_maps += [
             [
                 np.array(
-                    [
-                        obj.get_unl_map(idx, "t").astype(float),
-                        *[t.astype(float) for t in obj.get_unl_map(idx, "qu")],
-                    ]
+                    [obj.get_unl_map(idx, f).astype(float) for f in ["t", "q", "u"]]
                 ),
                 i,
             ]
@@ -100,7 +104,13 @@ def get_cluster_maps(
             for idx in range(nsims)
         ]
 
-    return np.array(maps), np.array(kappa_maps), np.array(unl_maps), np.array(len_maps)
+    return (
+        np.array(maps),
+        np.array(kappa_maps),
+        np.array(unl_maps),
+        np.array(len_maps),
+        np.array(teb_maps),
+    )
 
 
 @click.command()
@@ -175,8 +185,11 @@ def genmaps(**args):
     args["destdir"] = os.path.join(os.getcwd(), args["destdir"])
     results = initialize_camb(args["cambinifile"])
     os.environ["LENSIT"] = args["destdir"]
-    maps, kappa_maps, unl_maps, len_maps = get_cluster_maps(results=results, **args)
+    maps, kappa_maps, unl_maps, len_maps, teb_maps = get_cluster_maps(
+        results=results, **args
+    )
     np.save(os.path.join(args["destdir"], "maps"), maps, allow_pickle=True)
+    np.save(os.path.join(args["destdir"], "teb_maps"), teb_maps, allow_pickle=True)
     np.save(os.path.join(args["destdir"], "kappa_maps"), kappa_maps, allow_pickle=True)
     np.save(os.path.join(args["destdir"], "unl_maps"), unl_maps, allow_pickle=True)
     np.save(os.path.join(args["destdir"], "len_maps"), len_maps, allow_pickle=True)
