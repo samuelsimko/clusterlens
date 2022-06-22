@@ -12,9 +12,9 @@ Features
 --------
 
 - Generation of training data using `LensIt <https://github.com/carronj/LensIt>`_
-- MResUNet and ResNet models
-- Training on T or TEB maps
-- Two labels available: Kappa map or cluster mass.
+- MResUNet, ResNet, and `Timm <https://github.com/rwightman/pytorch-image-models>`_ models
+- Training on T, TEB, or TQU maps
+- Multiple labels available: Kappa map, cluster mass, or denoised input maps.
 
 Usage
 -----
@@ -34,11 +34,10 @@ Create simulated maps by executing `gen_maps.py`
    $ python src/gen_maps.py 1 2 3 4 5 traindata --nsims 64 --cambinifile /path/to/cambinifile
    $ python src/gen_maps.py 1 2 3 4 5 validationdata --nsims 64 --cambinifile /path/to/cambinifile
 
-Here, the script generates maps with masses in (1, 2, 3, 4) * 1e14 M☉.
+In this example, the script generates maps with masses in (1, 2, 3, 4) * 1e14 M☉.
 `64` maps are created for each mass.
 It will store the training maps in the `traindata` directory, and the validation maps in the 
 `validationdata` directory.
-
 
 To train a model, execute the `train.py` script.
 
