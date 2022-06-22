@@ -81,14 +81,13 @@ class ResNet(pl.LightningModule):
 
         if ["mass"] == self.output_type:
             self.lin = nn.Linear(in_features=npix * npix, out_features=1)
-        else:
-            raise NotImplementedError("Not yet implemented")
 
     def forward(self, x):
         x = F.relu(self.conv0(x))
         x = self.resblocks(x)
         x = self.conv1(x)
-        x = self.lin(x.view(x.shape[0], -1)).view((x.shape[0], 1, 1, 1))
+        if ["mass"] == self.output_type:
+            x = self.lin(x.view(x.shape[0], -1)).view((x.shape[0], 1, 1, 1))
         return x
 
     @staticmethod
@@ -145,9 +144,11 @@ class ResNet(pl.LightningModule):
 
         if "mass" in self.output_type and self.mass_plotter is not None:
             self.mass_plotter.plot_all(outputs, self.current_epoch, step="validation")
+            return
 
     def training_epoch_end(self, outputs):
         """Plot graphs to writer at the end of each training epoch"""
 
         if "mass" in self.output_type and self.mass_plotter is not None:
             self.mass_plotter.plot_all(outputs, self.current_epoch, step="training")
+            return

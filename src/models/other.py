@@ -10,7 +10,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-
 class TimmModel(pl.LightningModule):
     """Use networks from the library Timm"""
 
@@ -99,7 +98,8 @@ class TimmModel(pl.LightningModule):
         if self.dump_predictions:
             # Dump the predictions for the current epoch
             f = open(
-                "validation_epoch_end_{}_{}".format(self.current_epoch, time.time()), "wb"
+                "validation_epoch_end_{}_{}".format(self.current_epoch, time.time()),
+                "wb",
             )
             pickle.dump(
                 [(outputs[i]["y"], outputs[i]["y_hat"]) for i in range(len(outputs))], f
